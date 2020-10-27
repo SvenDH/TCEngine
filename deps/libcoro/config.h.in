@@ -1,0 +1,7 @@
+#cmakedefine HAVE_UCONTEXT_H
+#cmakedefine HAVE_SETJMP_H
+#cmakedefine HAVE_SIGALTSTACK
+#cmakedefine CORO_FIBER 1
+#cmakedefine CORO_ASM 1
+#cmakedefine CORO_SJLJ 1
+#cmakedefine WINDOWS
