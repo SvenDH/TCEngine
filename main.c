@@ -1,74 +1,78 @@
 #include "tc.h"
 
+stringpool_t pool;
 
-static void* array_crunch(void* arg) {
-	int* a = (int*)arg;
-	*a = 42;
-	//printf("hello fiber sub %p\n", a);
+tc_allocator_i* a;
+
+static void* producer(void* args) 
+{
+	tc_channel_t* c = (tc_channel_i*)args;
+	int wid = tc_os->cpu_id();
+	tc_put_t data = { c, wid };
+	await(tc_channel->put(&data));
 	return 0;
 }
 
-static void* fiber_worker(void* arg) {
-	int data = *(int*)arg;
-	
-	int* arr = (int*)cache_alloc(fiber_cache(), sizeof(int) * data);
+static void* consumer(void* args)
+{
+	tc_channel_t* c = (tc_channel_i*)args;
+	int data = await(tc_channel->get(c));
+	TRACE(LOG_INFO, "%i, %i", tc_os->cpu_id(), data);
+	return 0;
+}
 
-	job_t* jobs = (job_t*)cache_alloc(fiber_cache(), sizeof(job_t) * data);
-	for (int i = 0; i < data; i++) {
-		jobs[i].func = array_crunch;
-		jobs[i].data = &arr[i];
+static void* main_fiber(void* args)
+{
+	jobdecl_t* jobs = scratch_alloc(128 * sizeof(jobdecl_t));
+
+	int array[64];
+	for (int i = 0; i < 64; i++)
+		array[i] = i;
+
+	tc_channel_i* channel = tc_channel->create(a, 4);
+
+	for (int i = 0; i < 64; i++) {
+		jobs[i].func = producer;
+		jobs[i].data = channel;
 	}
 
-	counter_id counter = jobs_run(jobs, data);
-	counter_wait(counter, 0);
-	counter_free(counter);
-
-	cache_free(fiber_cache(), jobs);
-
-	for (int i = 0; i < data; i++) {
-		TC_ASSERT(arr[i] == 42);
+	for (int i = 64; i < 128; i++) {
+		jobs[i].func = consumer;
+		jobs[i].data = channel;
 	}
+	tc_fut_t* c = tc_fiber->run_jobs(jobs, 128, NULL);
 
-	cache_free(fiber_cache(), arr);
+	tc_channel->destroy(channel);
 
-	printf("hello fiber %i\n", data);
-	
+	tc_buffers_i* buf = tc_buffers->create(a);
+
+	tc_stream_i* stream = tc_stream->open_pipe(a, buf, (fd_t) { 0 });
+
+	uint32_t b = await(stream->read(stream, 100));
+
+
+	tc_future->wait_and_free(c, 0);
+
 	return 0;
 }
 
-static void* main_fiber(void* args) {
-	(void)args;
+int main(void)
+{
+	a = tc_buddy->create(tc_memory->vm, GLOBAL_BUFFER_SIZE, 64);
 
-	int data[] = { 69, 420, 133, 50, 111, 1200, 128, 1337 };
+	tc_init_registry(a);
+	fiber_pool_init(a, 256);
+	timer_pool_create(a);
+	assets_init(a);
 
-	job_t jobs[] = {
-		{ fiber_worker, &data[0] },
-		{ fiber_worker, &data[1] },
-		{ fiber_worker, &data[2] },
-		{ fiber_worker, &data[3] },
-		{ fiber_worker, &data[4] },
-		{ fiber_worker, &data[5] },
-		{ fiber_worker, &data[6] },
-		{ fiber_worker, &data[7] },
-	};
 
-	counter_id counter = jobs_run(jobs, 8);
-	counter_wait(counter, 0);
-	counter_free(counter);
+	jobdecl_t main_job = { main_fiber, a };
+	tc_fut_t* c = tc_fiber->run_jobs(&main_job, 1, NULL);
+	tc_future->wait_and_free(c, 0);
 	
-	return 0;
-}
-
-int main(void) {
-	memory_init();
-	fiber_init();
-
-	job_t main_job = { main_fiber, NULL };
-	counter_id c = jobs_run(&main_job, 1);
-	counter_wait(c, 0);
-
-	fiber_close();
-	memory_free();
-
+	assets_close(a);
+	timer_pool_destroy();
+	tc_close_registry(a);
+	fiber_pool_close(a);
 	return 0;
 }

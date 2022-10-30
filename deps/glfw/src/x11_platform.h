@@ -51,25 +51,25 @@
 typedef XClassHint* (* PFN_XAllocClassHint)(void);
 typedef XSizeHints* (* PFN_XAllocSizeHints)(void);
 typedef XWMHints* (* PFN_XAllocWMHints)(void);
-typedef int (* PFN_XChangeProperty)(Display*,Window,Atom,Atom,int,int,const unsigned char*,int);
-typedef int (* PFN_XChangeWindowAttributes)(Display*,Window,unsigned long,XSetWindowAttributes*);
+typedef int (* PFN_XChangeProperty)(Display*,window_t,Atom,Atom,int,int,const unsigned char*,int);
+typedef int (* PFN_XChangeWindowAttributes)(Display*,window_t,unsigned long,XSetWindowAttributes*);
 typedef Bool (* PFN_XCheckIfEvent)(Display*,XEvent*,Bool(*)(Display*,XEvent*,XPointer),XPointer);
-typedef Bool (* PFN_XCheckTypedWindowEvent)(Display*,Window,int,XEvent*);
+typedef Bool (* PFN_XCheckTypedWindowEvent)(Display*,window_t,int,XEvent*);
 typedef int (* PFN_XCloseDisplay)(Display*);
 typedef Status (* PFN_XCloseIM)(XIM);
-typedef int (* PFN_XConvertSelection)(Display*,Atom,Atom,Atom,Window,Time);
-typedef Colormap (* PFN_XCreateColormap)(Display*,Window,Visual*,int);
+typedef int (* PFN_XConvertSelection)(Display*,Atom,Atom,Atom,window_t,Time);
+typedef Colormap (* PFN_XCreateColormap)(Display*,window_t,Visual*,int);
 typedef Cursor (* PFN_XCreateFontCursor)(Display*,unsigned int);
 typedef XIC (* PFN_XCreateIC)(XIM,...);
-typedef Window (* PFN_XCreateWindow)(Display*,Window,int,int,unsigned int,unsigned int,unsigned int,int,unsigned int,Visual*,unsigned long,XSetWindowAttributes*);
-typedef int (* PFN_XDefineCursor)(Display*,Window,Cursor);
+typedef window_t (* PFN_XCreateWindow)(Display*,window_t,int,int,unsigned int,unsigned int,unsigned int,int,unsigned int,Visual*,unsigned long,XSetWindowAttributes*);
+typedef int (* PFN_XDefineCursor)(Display*,window_t,Cursor);
 typedef int (* PFN_XDeleteContext)(Display*,XID,XContext);
-typedef int (* PFN_XDeleteProperty)(Display*,Window,Atom);
+typedef int (* PFN_XDeleteProperty)(Display*,window_t,Atom);
 typedef void (* PFN_XDestroyIC)(XIC);
-typedef int (* PFN_XDestroyWindow)(Display*,Window);
+typedef int (* PFN_XDestroyWindow)(Display*,window_t);
 typedef int (* PFN_XDisplayKeycodes)(Display*,int*,int*);
 typedef int (* PFN_XEventsQueued)(Display*,int);
-typedef Bool (* PFN_XFilterEvent)(XEvent*,Window);
+typedef Bool (* PFN_XFilterEvent)(XEvent*,window_t);
 typedef int (* PFN_XFindContext)(Display*,XID,XContext,XPointer*);
 typedef int (* PFN_XFlush)(Display*);
 typedef int (* PFN_XFree)(void*);
@@ -80,57 +80,57 @@ typedef int (* PFN_XGetErrorText)(Display*,int,char*,int);
 typedef Bool (* PFN_XGetEventData)(Display*,XGenericEventCookie*);
 typedef char* (* PFN_XGetICValues)(XIC,...);
 typedef char* (* PFN_XGetIMValues)(XIM,...);
-typedef int (* PFN_XGetInputFocus)(Display*,Window*,int*);
+typedef int (* PFN_XGetInputFocus)(Display*,window_t*,int*);
 typedef KeySym* (* PFN_XGetKeyboardMapping)(Display*,KeyCode,int,int*);
 typedef int (* PFN_XGetScreenSaver)(Display*,int*,int*,int*,int*);
-typedef Window (* PFN_XGetSelectionOwner)(Display*,Atom);
+typedef window_t (* PFN_XGetSelectionOwner)(Display*,Atom);
 typedef XVisualInfo* (* PFN_XGetVisualInfo)(Display*,long,XVisualInfo*,int*);
-typedef Status (* PFN_XGetWMNormalHints)(Display*,Window,XSizeHints*,long*);
-typedef Status (* PFN_XGetWindowAttributes)(Display*,Window,XWindowAttributes*);
-typedef int (* PFN_XGetWindowProperty)(Display*,Window,Atom,long,long,Bool,Atom,Atom*,int*,unsigned long*,unsigned long*,unsigned char**);
-typedef int (* PFN_XGrabPointer)(Display*,Window,Bool,unsigned int,int,int,Window,Cursor,Time);
-typedef Status (* PFN_XIconifyWindow)(Display*,Window,int);
+typedef Status (* PFN_XGetWMNormalHints)(Display*,window_t,XSizeHints*,long*);
+typedef Status (* PFN_XGetWindowAttributes)(Display*,window_t,XWindowAttributes*);
+typedef int (* PFN_XGetWindowProperty)(Display*,window_t,Atom,long,long,Bool,Atom,Atom*,int*,unsigned long*,unsigned long*,unsigned char**);
+typedef int (* PFN_XGrabPointer)(Display*,window_t,Bool,unsigned int,int,int,window_t,Cursor,Time);
+typedef Status (* PFN_XIconifyWindow)(Display*,window_t,int);
 typedef Status (* PFN_XInitThreads)(void);
 typedef Atom (* PFN_XInternAtom)(Display*,const char*,Bool);
 typedef int (* PFN_XLookupString)(XKeyEvent*,char*,int,KeySym*,XComposeStatus*);
-typedef int (* PFN_XMapRaised)(Display*,Window);
-typedef int (* PFN_XMapWindow)(Display*,Window);
-typedef int (* PFN_XMoveResizeWindow)(Display*,Window,int,int,unsigned int,unsigned int);
-typedef int (* PFN_XMoveWindow)(Display*,Window,int,int);
+typedef int (* PFN_XMapRaised)(Display*,window_t);
+typedef int (* PFN_XMapWindow)(Display*,window_t);
+typedef int (* PFN_XMoveResizeWindow)(Display*,window_t,int,int,unsigned int,unsigned int);
+typedef int (* PFN_XMoveWindow)(Display*,window_t,int,int);
 typedef int (* PFN_XNextEvent)(Display*,XEvent*);
 typedef Display* (* PFN_XOpenDisplay)(const char*);
 typedef XIM (* PFN_XOpenIM)(Display*,XrmDatabase*,char*,char*);
 typedef int (* PFN_XPeekEvent)(Display*,XEvent*);
 typedef int (* PFN_XPending)(Display*);
 typedef Bool (* PFN_XQueryExtension)(Display*,const char*,int*,int*,int*);
-typedef Bool (* PFN_XQueryPointer)(Display*,Window,Window*,Window*,int*,int*,int*,int*,unsigned int*);
-typedef int (* PFN_XRaiseWindow)(Display*,Window);
+typedef Bool (* PFN_XQueryPointer)(Display*,window_t,window_t*,window_t*,int*,int*,int*,int*,unsigned int*);
+typedef int (* PFN_XRaiseWindow)(Display*,window_t);
 typedef Bool (* PFN_XRegisterIMInstantiateCallback)(Display*,void*,char*,char*,XIDProc,XPointer);
-typedef int (* PFN_XResizeWindow)(Display*,Window,unsigned int,unsigned int);
+typedef int (* PFN_XResizeWindow)(Display*,window_t,unsigned int,unsigned int);
 typedef char* (* PFN_XResourceManagerString)(Display*);
 typedef int (* PFN_XSaveContext)(Display*,XID,XContext,const char*);
-typedef int (* PFN_XSelectInput)(Display*,Window,long);
-typedef Status (* PFN_XSendEvent)(Display*,Window,Bool,long,XEvent*);
-typedef int (* PFN_XSetClassHint)(Display*,Window,XClassHint*);
+typedef int (* PFN_XSelectInput)(Display*,window_t,long);
+typedef Status (* PFN_XSendEvent)(Display*,window_t,Bool,long,XEvent*);
+typedef int (* PFN_XSetClassHint)(Display*,window_t,XClassHint*);
 typedef XErrorHandler (* PFN_XSetErrorHandler)(XErrorHandler);
 typedef void (* PFN_XSetICFocus)(XIC);
 typedef char* (* PFN_XSetIMValues)(XIM,...);
-typedef int (* PFN_XSetInputFocus)(Display*,Window,int,Time);
+typedef int (* PFN_XSetInputFocus)(Display*,window_t,int,Time);
 typedef char* (* PFN_XSetLocaleModifiers)(const char*);
 typedef int (* PFN_XSetScreenSaver)(Display*,int,int,int,int);
-typedef int (* PFN_XSetSelectionOwner)(Display*,Atom,Window,Time);
-typedef int (* PFN_XSetWMHints)(Display*,Window,XWMHints*);
-typedef void (* PFN_XSetWMNormalHints)(Display*,Window,XSizeHints*);
-typedef Status (* PFN_XSetWMProtocols)(Display*,Window,Atom*,int);
+typedef int (* PFN_XSetSelectionOwner)(Display*,Atom,window_t,Time);
+typedef int (* PFN_XSetWMHints)(Display*,window_t,XWMHints*);
+typedef void (* PFN_XSetWMNormalHints)(Display*,window_t,XSizeHints*);
+typedef Status (* PFN_XSetWMProtocols)(Display*,window_t,Atom*,int);
 typedef Bool (* PFN_XSupportsLocale)(void);
 typedef int (* PFN_XSync)(Display*,Bool);
-typedef Bool (* PFN_XTranslateCoordinates)(Display*,Window,Window,int,int,int*,int*,Window*);
-typedef int (* PFN_XUndefineCursor)(Display*,Window);
+typedef Bool (* PFN_XTranslateCoordinates)(Display*,window_t,window_t,int,int,int*,int*,window_t*);
+typedef int (* PFN_XUndefineCursor)(Display*,window_t);
 typedef int (* PFN_XUngrabPointer)(Display*,Time);
-typedef int (* PFN_XUnmapWindow)(Display*,Window);
+typedef int (* PFN_XUnmapWindow)(Display*,window_t);
 typedef void (* PFN_XUnsetICFocus)(XIC);
 typedef VisualID (* PFN_XVisualIDFromVisual)(Visual*);
-typedef int (* PFN_XWarpPointer)(Display*,Window,Window,int,int,unsigned int,unsigned int,int,int);
+typedef int (* PFN_XWarpPointer)(Display*,window_t,window_t,int,int,unsigned int,unsigned int,int,int);
 typedef void (* PFN_XkbFreeKeyboard)(XkbDescPtr,unsigned int,Bool);
 typedef void (* PFN_XkbFreeNames)(XkbDescPtr,unsigned int,Bool);
 typedef XkbDescPtr (* PFN_XkbGetMap)(Display*,unsigned int,unsigned int);
@@ -147,7 +147,7 @@ typedef void (* PFN_XrmInitialize)(void);
 typedef XrmQuark (* PFN_XrmUniqueQuark)(void);
 typedef Bool (* PFN_XUnregisterIMInstantiateCallback)(Display*,void*,char*,char*,XIDProc,XPointer);
 typedef int (* PFN_Xutf8LookupString)(XIC,XKeyPressedEvent*,char*,int,KeySym*,Status*);
-typedef void (* PFN_Xutf8SetWMProperties)(Display*,Window,const char*,const char*,char**,int,XSizeHints*,XWMHints*,XClassHint*);
+typedef void (* PFN_Xutf8SetWMProperties)(Display*,window_t,const char*,const char*,char**,int,XSizeHints*,XWMHints*,XClassHint*);
 #define XAllocClassHint _glfw.x11.xlib.AllocClassHint
 #define XAllocSizeHints _glfw.x11.xlib.AllocSizeHints
 #define XAllocWMHints _glfw.x11.xlib.AllocWMHints
@@ -258,11 +258,11 @@ typedef XRRCrtcGamma* (* PFN_XRRGetCrtcGamma)(Display*,RRCrtc);
 typedef int (* PFN_XRRGetCrtcGammaSize)(Display*,RRCrtc);
 typedef XRRCrtcInfo* (* PFN_XRRGetCrtcInfo) (Display*,XRRScreenResources*,RRCrtc);
 typedef XRROutputInfo* (* PFN_XRRGetOutputInfo)(Display*,XRRScreenResources*,RROutput);
-typedef RROutput (* PFN_XRRGetOutputPrimary)(Display*,Window);
-typedef XRRScreenResources* (* PFN_XRRGetScreenResourcesCurrent)(Display*,Window);
+typedef RROutput (* PFN_XRRGetOutputPrimary)(Display*,window_t);
+typedef XRRScreenResources* (* PFN_XRRGetScreenResourcesCurrent)(Display*,window_t);
 typedef Bool (* PFN_XRRQueryExtension)(Display*,int*,int*);
 typedef Status (* PFN_XRRQueryVersion)(Display*,int*,int*);
-typedef void (* PFN_XRRSelectInput)(Display*,Window,int);
+typedef void (* PFN_XRRSelectInput)(Display*,window_t,int);
 typedef Status (* PFN_XRRSetCrtcConfig)(Display*,XRRScreenResources*,RRCrtc,Time,int,int,RRMode,Rotation,RROutput*,int);
 typedef void (* PFN_XRRSetCrtcGamma)(Display*,RRCrtc,XRRCrtcGamma*);
 typedef int (* PFN_XRRUpdateConfiguration)(XEvent*);
@@ -320,7 +320,7 @@ typedef Bool (* PFN_XF86VidModeGetGammaRampSize)(Display*,int,int*);
 #define XF86VidModeGetGammaRampSize _glfw.x11.vidmode.GetGammaRampSize
 
 typedef Status (* PFN_XIQueryVersion)(Display*,int*,int*);
-typedef int (* PFN_XISelectEvents)(Display*,Window,XIEventMask*,int);
+typedef int (* PFN_XISelectEvents)(Display*,window_t,XIEventMask*,int);
 #define XIQueryVersion _glfw.x11.xi.QueryVersion
 #define XISelectEvents _glfw.x11.xi.SelectEvents
 
@@ -340,7 +340,7 @@ typedef struct VkXlibSurfaceCreateInfoKHR
     const void*                 pNext;
     VkXlibSurfaceCreateFlagsKHR flags;
     Display*                    dpy;
-    Window                      window;
+    window_t                      window;
 } VkXlibSurfaceCreateInfoKHR;
 
 typedef struct VkXcbSurfaceCreateInfoKHR
@@ -387,8 +387,8 @@ typedef VkBool32 (APIENTRY *PFN_vkGetPhysicalDeviceXcbPresentationSupportKHR)(Vk
 typedef struct _GLFWwindowX11
 {
     Colormap        colormap;
-    Window          handle;
-    Window          parent;
+    window_t          handle;
+    window_t          parent;
     XIC             ic;
 
     GLFWbool        overrideRedirect;
@@ -418,12 +418,12 @@ typedef struct _GLFWlibraryX11
 {
     Display*        display;
     int             screen;
-    Window          root;
+    window_t          root;
 
     // System content scale
     float           contentScaleX, contentScaleY;
     // Helper window for IPC
-    Window          helperWindowHandle;
+    window_t          helperWindowHandle;
     // Invisible cursor for hidden cursor mode
     Cursor          hiddenCursorHandle;
     // Context for mapping window XIDs to _GLFWwindow pointers
@@ -754,7 +754,7 @@ void _glfwRestoreVideoModeX11(_GLFWmonitor* monitor);
 
 Cursor _glfwCreateCursorX11(const GLFWimage* image, int xhot, int yhot);
 
-unsigned long _glfwGetWindowPropertyX11(Window window,
+unsigned long _glfwGetWindowPropertyX11(window_t window,
                                         Atom property,
                                         Atom type,
                                         unsigned char** value);
