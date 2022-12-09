@@ -1,8 +1,4 @@
-﻿#include "core.h"
-#include "types.h"
-#include "log.h"
-#include "tcmath.h"
-#include "graphics.h"
+#include "private_types.h"
 
 #include <GLFW/glfw3.h>
 
@@ -101,7 +97,7 @@ static void scroll_cb(GLFWwindow* window, double x, double y);
 
 
 // Create window and initialize graphics
-void window_create(int width, int height, const char* title) 
+void window_create(int width, int height, const char* title)
 {
 	TRACE(LOG_INFO, "[Window]: Initializing window");
 
@@ -237,9 +233,9 @@ void window_create(int width, int height, const char* title)
 	int FBOw = window.render[0];
 	int FBOh = window.render[1];
 	glfwGetFramebufferSize(handle, &FBOw, &FBOh);
-	mat_transform(window.scale, 0, 0, 0, (float)FBOw/window.screen[0], (float)FBOh/window.screen[1], 0, 0, 0, 0);
-	input.mouse.scale[0] = (float)window.screen[0]/FBOw;
-	input.mouse.scale[0] = (float)window.screen[1]/FBOh;
+	mat_transform(window.scale, 0, 0, 0, (float)FBOw / window.screen[0], (float)FBOh / window.screen[1], 0, 0, 0, 0);
+	input.mouse.scale[0] = (float)window.screen[0] / FBOw;
+	input.mouse.scale[0] = (float)window.screen[1] / FBOh;
 
 	viewport_setup(window.screen[0], window.screen[1]);
 	window.rendersize[0] = window.screen[0];
@@ -249,7 +245,7 @@ void window_create(int width, int height, const char* title)
 	window.state |= WFOCUSED;
 }
 
-void window_close(void) 
+void window_close(void)
 {
 	glfwDestroyWindow(window.handle);
 	glfwTerminate();
@@ -257,7 +253,7 @@ void window_close(void)
 	TRACE(LOG_INFO, "[Window]: Window closed successfully");
 }
 
-int window_alive(void) 
+int window_alive(void)
 {
 	if (window.state & WREADY) {
 		while (!(window.flags & WCONTINUEMINIMIZED) && (window.state & WMINIMIZED)) glfwWaitEvents();
@@ -270,22 +266,22 @@ int window_alive(void)
 	return false;
 }
 
-void* window_handle() 
+void* window_handle()
 {
 	return window.handle;
 }
 
-const char* window_get_title() 
+const char* window_get_title()
 {
 	return window.title;
 }
 
-double time_get(void) 
+double time_get(void)
 {
 	return glfwGetTime();
 }
 
-void inputs_poll(void) 
+void inputs_poll(void)
 {
 	input.keyboard.keyqueuelen = 0;
 	// Copy current input states to previous states
@@ -298,32 +294,32 @@ void inputs_poll(void)
 	glfwPollEvents();
 }
 
-void swap_buffers(void) 
+void swap_buffers(void)
 {
 	glfwSwapBuffers(window.handle);
 }
 
-static bool graphicsdevice_init(int16_t width, int16_t height) 
+static bool graphicsdevice_init(int16_t width, int16_t height)
 {
-	
+
 }
 
-static void framebuffer_setup(int width, int height) 
+static void framebuffer_setup(int width, int height)
 {
 	if (window.screen[0] > window.display[0] || window.screen[1] > window.screen[1]) {
-		TRACE(LOG_INFO, "[Window]: Downscaling: Screen size (%ix%i) is bigger than display size (%ix%i)", 
+		TRACE(LOG_INFO, "[Window]: Downscaling: Screen size (%ix%i) is bigger than display size (%ix%i)",
 			window.screen[0], window.screen[1], window.display[0], window.display[1]);
 		float widthratio = window.display[0] / window.screen[0];
 		float heightratio = window.display[1] / window.screen[1];
 		if (widthratio <= heightratio) {
 			float scale = (float)window.display[0] / (float)window.screen[0];
-			mat_transform(window.scale,0,0,0,scale,scale,0,0,0,0);
+			mat_transform(window.scale, 0, 0, 0, scale, scale, 0, 0, 0, 0);
 			window.offset[0] = 0;
 			window.offset[1] = window.display[1] - window.render[1];
 		}
 		else {
 			float scale = (int)round((float)window.screen[0] * heightratio) / window.screen[0];
-			mat_transform(window.scale,0,0,0,scale,scale,0,0,0,0);
+			mat_transform(window.scale, 0, 0, 0, scale, scale, 0, 0, 0, 0);
 			window.offset[0] = window.display[0] - window.render[0];
 			window.offset[1] = 0;
 		}
@@ -331,7 +327,7 @@ static void framebuffer_setup(int width, int height)
 		window.render[1] = window.display[1];
 	}
 	else if (window.screen[0] < window.display[0] || window.screen[1] < window.display[1]) {
-		TRACE(LOG_INFO, "[Window]: Upscaling: Screen size (%ix%i) is smaller than display size (%ix%i)", 
+		TRACE(LOG_INFO, "[Window]: Upscaling: Screen size (%ix%i) is smaller than display size (%ix%i)",
 			window.screen[0], window.screen[1], window.display[0], window.display[1]);
 		float displayratio = (float)window.display[0] / (float)window.display[1];
 		float screenratio = (float)window.screen[0] / (float)window.screen[1];
@@ -356,17 +352,17 @@ static void framebuffer_setup(int width, int height)
 	}
 }
 
-static void timer_init(void) 
+static void timer_init(void)
 {
 	time.prev = time_get();
 	srand((unsigned int)time.prev);              // Initialize random seed
 }
 
-static void viewport_setup(int width, int height) 
+static void viewport_setup(int width, int height)
 {
 	window.render[0] = width;
 	window.render[1] = height;
-	irect2 viewport = { window.offset[0]/2, window.offset[1]/2, window.render[0] - window.offset[0], window.render[1] - window.offset[1] };
+	irect2 viewport = { window.offset[0] / 2, window.offset[1] / 2, window.render[0] - window.offset[0], window.render[1] - window.offset[1] };
 	//gl_viewport(viewport);
 
 	//gfx_ortho(0, window.render[0], window.render[1], 0);
@@ -374,12 +370,12 @@ static void viewport_setup(int width, int height)
 
 /* Definition of window callbacks: */
 
-static void error_cb(int error, const char* info) 
+static void error_cb(int error, const char* info)
 {
 	TRACE(LOG_WARNING, "[GLFW] %i: %s", error, info);
 }
 
-static void windowsize_cb(GLFWwindow* handle, int width, int height) 
+static void windowsize_cb(GLFWwindow* handle, int width, int height)
 {
 	viewport_setup(width, height);
 	window.screen[0] = width;
@@ -389,29 +385,29 @@ static void windowsize_cb(GLFWwindow* handle, int width, int height)
 	window.state |= WRESIZED;
 }
 
-static void mouseenter_cb(GLFWwindow* handle, int enter) 
+static void mouseenter_cb(GLFWwindow* handle, int enter)
 {
 	input.mouse.onscreen = enter;
 }
 
-static void windowiconify_cb(GLFWwindow* handle, int iconified) 
+static void windowiconify_cb(GLFWwindow* handle, int iconified)
 {
 	if (iconified) window.state |= WMINIMIZED;
 	else window.state &= ~WMINIMIZED;
 }
 
-static void windowfocus_cb(GLFWwindow* handle, int focused) 
+static void windowfocus_cb(GLFWwindow* handle, int focused)
 {
 	if (focused) window.state |= WFOCUSED;
 	else window.state &= ~WFOCUSED;
 }
 
-static void windowdrop_cb(GLFWwindow* handle, int count, const char** paths) 
+static void windowdrop_cb(GLFWwindow* handle, int count, const char** paths)
 {
 	TRACE(LOG_WARNING, "[System]: File droping not implemented");
 }
 
-static void key_cb(GLFWwindow* handle, int key, int scancode, int action, int mods) 
+static void key_cb(GLFWwindow* handle, int key, int scancode, int action, int mods)
 {
 	if (key == input.keyboard.exitkey && action == GLFW_PRESS)
 		glfwSetWindowShouldClose(window.handle, true);
@@ -421,24 +417,24 @@ static void key_cb(GLFWwindow* handle, int key, int scancode, int action, int mo
 	}
 }
 
-static void char_cb(GLFWwindow* handle, unsigned int key) 
+static void char_cb(GLFWwindow* handle, unsigned int key)
 {
 	if (input.keyboard.keyqueuelen < MAX_KEY_QUEUE)
 		input.keyboard.keyqueue[input.keyboard.keyqueuelen++] = key;
 }
 
-static void mousebutton_cb(GLFWwindow* handle, int button, int action, int mods) 
+static void mousebutton_cb(GLFWwindow* handle, int button, int action, int mods)
 {
 	input.mouse.buttonstate[button] = action;
 }
 
-static void mouseposition_cb(GLFWwindow* handle, double x, double y) 
+static void mouseposition_cb(GLFWwindow* handle, double x, double y)
 {
 	input.mouse.position[0] = (float)x;
 	input.mouse.position[1] = (float)y;
 }
 
-static void scroll_cb(GLFWwindow* handle, double x, double y) 
+static void scroll_cb(GLFWwindow* handle, double x, double y)
 {
 	input.mouse.wheelmove = (int)y;
 }

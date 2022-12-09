@@ -1,23 +1,12 @@
 /*==========================================================*/
 /*								OS							*/
 /*==========================================================*/
-#include "os.h"
-#include "memory.h"
-#include "temp.h"
-#include "slab.h"
-#include "buddy.h"
-#include "fiber.h"
-#include "sbuf.h"
-#include "log.h"
-#include "lock.h"
-#include "future.h"
+#include "private_types.h"
 
 #include <uv.h>
 
 
-
-void* mem_map(size_t size) 
-{
+void* mem_map(size_t size) {
 #ifdef _WIN32
 	return VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 #else
@@ -29,8 +18,7 @@ void* mem_map(size_t size)
 #endif
 }
 
-void* mem_reserve(size_t size) 
-{
+void* mem_reserve(size_t size) {
 #ifdef _WIN32
 	return VirtualAlloc(0, size, MEM_RESERVE, PAGE_READWRITE);
 #else
@@ -42,15 +30,13 @@ void* mem_reserve(size_t size)
 #endif
 }
 
-void mem_commit(void* ptr, size_t size)
-{
+void mem_commit(void* ptr, size_t size) {
 #ifdef _WIN32
 	VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE);
 #endif
 }
 
-void mem_unmap(void* ptr, size_t size) 
-{
+void mem_unmap(void* ptr, size_t size) {
 #ifdef _WIN32
 	(void)size;
 	VirtualFree(ptr, 0, MEM_RELEASE);
@@ -59,8 +45,7 @@ void mem_unmap(void* ptr, size_t size)
 #endif
 }
 
-size_t os_page_size()
-{
+size_t os_page_size() {
 #ifdef _WIN32
 	SYSTEM_INFO si;
 	GetSystemInfo(&si);
@@ -70,8 +55,7 @@ size_t os_page_size()
 #endif
 }
 
-void os_guard_page(void* ptr, size_t size)
-{
+void os_guard_page(void* ptr, size_t size) {
 #ifdef _WIN32
 	DWORD old_options;
 	if (VirtualProtect(ptr, size, PAGE_READWRITE | PAGE_GUARD, &old_options) == 0)
@@ -121,8 +105,7 @@ struct context_t* context;
 uv_once_t init = UV_ONCE_INIT;
 
 
-static void* mem_malloc(size_t size)
-{
+static void* mem_malloc(size_t size) {
 	if (size) {
 		uint32_t* s = tc_malloc(context->allocator, size + sizeof(uint32_t));
 		*s = (uint32_t)size;
@@ -131,23 +114,21 @@ static void* mem_malloc(size_t size)
 	return NULL;
 }
 
-static void* mem_calloc(size_t count, size_t size) 
-{
+static void* mem_calloc(size_t count, size_t size) {
 	return memset(mem_malloc(size), 0, size);
 }
 
-static void mem_free(void* ptr)
-{
+static void mem_free(void* ptr) {
 	if (ptr) {
 		uint32_t* s = ((uint32_t*)ptr) - 1;
 		tc_free(context->allocator, s, (*s) + sizeof(uint32_t));
 	}
 }
 
-static void* mem_realloc(void* ptr, size_t size)
-{
-	if (!ptr) 
+static void* mem_realloc(void* ptr, size_t size) {
+	if (!ptr) {
 		return mem_malloc(size);
+	}
 	if (size == 0) {
 		mem_free(ptr);
 		return NULL;
@@ -158,20 +139,17 @@ static void* mem_realloc(void* ptr, size_t size)
 	return ptr;
 }
 
-void init_context() 
-{
+void init_context() {
 	context = tc_malloc(tc_memory->system, sizeof(struct context_t));
 	memset(context, 0, sizeof(struct context_t));
-	context->allocator = tc_buddy->create(
-		tc_memory->vm, OS_ALLOCATOR_SIZE, OS_MIN_ALLOC_SIZE);
+	context->allocator = tc_buddy_new(tc_memory->vm, OS_ALLOCATOR_SIZE, OS_MIN_ALLOC_SIZE);
 	slab_create(&context->pool, context->allocator, CHUNK_SIZE);
 	
 	//uv_replace_allocator(mem_malloc, mem_realloc, mem_calloc, mem_free);
 }
 
 static 
-void os_cb(uv_fs_t* req) 
-{
+void os_cb(uv_fs_t* req) {
 	os_request_t* handle = (os_request_t*)req->data;
 	int64_t res = uv_fs_get_result(req);;
 	handle->results = res;
@@ -207,27 +185,25 @@ void os_cb(uv_fs_t* req)
 		}
 	}
 	uv_fs_req_cleanup(&handle->req);
-	tc_future->decrement(handle->future);
+	tc_fut_decr(handle->future);
 }
 
 static 
-void os_request_destroy(os_request_t* req) 
-{
+void os_request_destroy(os_request_t* req) {
 	TC_LOCK(&context->lock);
 	slab_free(context->pool, req);
 	TC_UNLOCK(&context->lock);
 }
 
 static 
-os_request_t* os_request_init_ex(char* buf, uint64_t size, tc_allocator_i* temp)
-{
+os_request_t* os_request_init_ex(char* buf, uint64_t size, tc_allocator_i* temp) {
 	uv_once(&init, init_context);
 	TC_LOCK(&context->lock);
 	os_request_t* req = slab_alloc(context->pool);
 	TC_UNLOCK(&context->lock);
 	req->instance = req;
 	req->dtor = os_request_destroy;
-	req->future = tc_future->create(context->allocator, 1, req, 4);
+	req->future = tc_fut_new(context->allocator, 1, req, 4);
 	req->buf = uv_buf_init(buf, size);
 	req->temp = temp;
 	req->req.data = req;
@@ -235,97 +211,83 @@ os_request_t* os_request_init_ex(char* buf, uint64_t size, tc_allocator_i* temp)
 }
 
 static 
-os_request_t* os_request_init()
-{
+os_request_t* os_request_init() {
 	return os_request_init_ex(NULL, 0, NULL);
 }
 
-tc_fut_t* os_stat(stat_t* stat, const char* path) 
-{
+tc_fut_t* os_stat(stat_t* stat, const char* path) {
 	os_request_t* req = os_request_init_ex(stat, sizeof(stat_t), NULL);
-	uv_fs_stat(tc_fiber->eventloop(), &req->req, path, os_cb);
+	uv_fs_stat(tc_eventloop(), &req->req, path, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_rename(const char* path, const char* new_path) 
-{
+tc_fut_t* os_rename(const char* path, const char* new_path) {
 	os_request_t* req = os_request_init();
-	uv_fs_rename(tc_fiber->eventloop(), &req->req, path, new_path, os_cb);
+	uv_fs_rename(tc_eventloop(), &req->req, path, new_path, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_link(const char* path, const char* new_path) 
-{
+tc_fut_t* os_link(const char* path, const char* new_path) {
 	os_request_t* req = os_request_init();
-	uv_fs_link(tc_fiber->eventloop(), &req->req, path, new_path, os_cb);
+	uv_fs_link(tc_eventloop(), &req->req, path, new_path, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_unlink(const char* path) 
-{
+tc_fut_t* os_unlink(const char* path) {
 	os_request_t* req = os_request_init();
-	uv_fs_unlink(tc_fiber->eventloop(), &req->req, path, os_cb);
+	uv_fs_unlink(tc_eventloop(), &req->req, path, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_mkdir(const char* path) 
-{
+tc_fut_t* os_mkdir(const char* path) {
 	os_request_t* req = os_request_init();
-	uv_fs_mkdir(tc_fiber->eventloop(), &req->req, path, 0, os_cb);
+	uv_fs_mkdir(tc_eventloop(), &req->req, path, 0, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_rmdir(const char* path)
-{
+tc_fut_t* os_rmdir(const char* path) {
 	os_request_t* req = os_request_init();
-	uv_fs_rmdir(tc_fiber->eventloop(), &req->req, path, os_cb);
+	uv_fs_rmdir(tc_eventloop(), &req->req, path, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_scandir(const char* path, tc_allocator_i* temp)
-{
+tc_fut_t* os_scandir(const char* path, tc_allocator_i* temp) {
 	os_request_t* req = os_request_init_ex(NULL, 0, temp);
-	uv_fs_scandir(tc_fiber->eventloop(), &req->req, path, 0, os_cb);
+	uv_fs_scandir(tc_eventloop(), &req->req, path, 0, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_open(const char* path, int flags) 
-{
+tc_fut_t* os_open(const char* path, int flags) {
 	os_request_t* req = os_request_init();
-	uv_fs_open(tc_fiber->eventloop(), &req->req, path, flags, S_IRUSR | S_IWUSR, os_cb);
+	uv_fs_open(tc_eventloop(), &req->req, path, flags, S_IRUSR | S_IWUSR, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_read(fd_t file, char* buf, uint64_t len, int64_t offset)
-{
+tc_fut_t* os_read(fd_t file, char* buf, uint64_t len, int64_t offset) {
 	os_request_t* req = os_request_init_ex(buf, len, NULL);
-	uv_fs_read(tc_fiber->eventloop(), &req->req, file.handle, &req->buf, 1, offset, os_cb);
+	uv_fs_read(tc_eventloop(), &req->req, file.handle, &req->buf, 1, offset, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_write(fd_t file, char* buf, uint64_t len, int64_t offset)
-{
+tc_fut_t* os_write(fd_t file, char* buf, uint64_t len, int64_t offset) {
 	os_request_t* req = os_request_init_ex(buf, len, NULL);
-	uv_fs_write(tc_fiber->eventloop(), &req->req, file.handle, &req->buf, 1, offset, os_cb);
+	uv_fs_write(tc_eventloop(), &req->req, file.handle, &req->buf, 1, offset, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_close(fd_t file) 
-{
+tc_fut_t* os_close(fd_t file) {
 	os_request_t* req = os_request_init();
-	uv_fs_close(tc_fiber->eventloop(), &req->req, file.handle, os_cb);
+	uv_fs_close(tc_eventloop(), &req->req, file.handle, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_copyfile(const char* path, const char* new_path) 
-{
+tc_fut_t* os_copyfile(const char* path, const char* new_path) {
 	os_request_t* req = os_request_init();
-	uv_fs_copyfile(tc_fiber->eventloop(), &req->req, path, new_path, 0, os_cb);
+	uv_fs_copyfile(tc_eventloop(), &req->req, path, new_path, 0, os_cb);
 	return req->future;
 }
 
-const char* os_tmpdir(tc_allocator_i* temp) 
-{
+const char* os_tmpdir(tc_allocator_i* temp) {
 	char tempbuf[1024];
 	size_t len = 1024;
 	uv_os_tmpdir(tempbuf, &len);
@@ -335,8 +297,7 @@ const char* os_tmpdir(tc_allocator_i* temp)
 	return buf;
 }
 
-const char* os_getcwd(tc_allocator_i* temp)
-{
+const char* os_getcwd(tc_allocator_i* temp) {
 	char tempbuf[1024];
 	size_t len = 1024;
 	uv_cwd(tempbuf, &len);
@@ -346,13 +307,11 @@ const char* os_getcwd(tc_allocator_i* temp)
 	return buf;
 }
 
-bool os_chdir(const char* path)
-{
+bool os_chdir(const char* path) {
 	return uv_chdir(path) == 0;
 }
 
-tc_thread_t os_create_thread(tc_thread_f entry, void* data, uint32_t stack_size)
-{
+tc_thread_t os_create_thread(tc_thread_f entry, void* data, uint32_t stack_size) {
 	uv_thread_t tid;
 	uv_thread_options_t opts = {
 		.flags = UV_THREAD_HAS_STACK_SIZE,
@@ -362,8 +321,7 @@ tc_thread_t os_create_thread(tc_thread_f entry, void* data, uint32_t stack_size)
 	return tid;
 }
 
-uint32_t os_cpu_id()
-{
+uint32_t os_cpu_id() {
 #ifdef _WIN32
 	return GetCurrentProcessorNumber();
 #else
@@ -373,8 +331,7 @@ uint32_t os_cpu_id()
 #endif
 }
 
-uint32_t os_get_number_cpus()
-{
+uint32_t os_get_number_cpus() {
 #ifdef _WIN32
 	SYSTEM_INFO info;
 	GetSystemInfo(&info);
@@ -401,8 +358,7 @@ uint32_t os_get_number_cpus()
 #endif
 }
 
-void os_set_thread_affinity(tc_thread_t thread, uint32_t cpu_num)
-{
+void os_set_thread_affinity(tc_thread_t thread, uint32_t cpu_num) {
 #ifdef _WIN32
 	//DWORD_PTR prev_mask = 
 	SetThreadAffinityMask((HANDLE)thread, (DWORD_PTR)1UL << (cpu_num));
@@ -414,8 +370,7 @@ void os_set_thread_affinity(tc_thread_t thread, uint32_t cpu_num)
 #endif
 }
 
-tc_thread_t os_get_current_thread()
-{ 
+tc_thread_t os_get_current_thread() {
 #ifdef _WIN32
 	HANDLE h = NULL;
 	if (!DuplicateHandle(

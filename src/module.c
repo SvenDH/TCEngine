@@ -1,12 +1,4 @@
-#include "module.h"
-#include "os.h"
-#include "memory.h"
-#include "region.h"
-#include "buddy.h"
-#include "temp.h"
-#include "lock.h"
-#include "tcatomic.h"
-#include "hash.h"
+#include "private_types.h"
 
 #include <malloc.h>
 
@@ -34,11 +26,10 @@ struct internal_registry {
 static struct internal_registry* state = NULL;
 
 static
-struct internal_module* _get_module(const char* name)
-{
+struct internal_module* _get_module(const char* name) {
 	void* ptr = NULL;
 	size_t len = strnlen(name, MAX_MODULE_NAME);
-	uint64_t hash = tc_hash_string_len(name, len);
+	uint64_t hash = tc_hash_str_len(name, len);
 	uint32_t idx = hash & (MAX_MODULES - 1);
 	for (uint32_t i = 0; i < MAX_MODULES; i++) {
 		struct internal_module* mod = &state->modules[idx];
@@ -77,8 +68,7 @@ void set_module(const char* name, void* data, size_t size) {
 }
 
 static 
-void* get_module(const char* name)
-{
+void* get_module(const char* name) {
 	void* ptr = NULL;
 	TC_LOCK(&state->lock);
 	{
@@ -90,8 +80,7 @@ void* get_module(const char* name)
 }
 
 static
-void* remove_module(const char* name)
-{
+void* remove_module(const char* name) {
 	TC_LOCK(&state->lock);
 	{
 		struct internal_module* mod = _get_module(name);
@@ -130,14 +119,12 @@ void remove_implementation(const char* name, void* data) {
 	TC_ASSERT(0, "[Module]: Could not find implementation for %s", name);
 }
 
-void tc_init_registry(tc_allocator_i* a) 
-{
+void tc_init_registry(tc_allocator_i* a) {
 	state = tc_malloc(a, sizeof(struct internal_registry));
 	memset(state, 0, sizeof(struct internal_registry));
 }
 
-void tc_close_registry(tc_allocator_i* a) 
-{
+void tc_close_registry(tc_allocator_i* a) {
 	tc_free(a, state, sizeof(struct internal_registry));
 }
 
@@ -149,19 +136,12 @@ tc_registry_i* tc_registry = &(tc_registry_i) {
 	.remove_implementation = remove_implementation,
 };
 
-void load_core(tc_registry_i* registery, bool load)
-{
+void load_core(tc_registry_i* registery, bool load) {
 	if (load) {
 		tc_registry->set(TC_REGISTRY_MODULE_NAME, tc_registry, sizeof(tc_registry_i));
 
 		tc_registry->set(TC_OS_MODULE_NAME, tc_os, sizeof(tc_os_i));
 
 		tc_registry->set(TC_ALLOCATION_MODULE_NAME, tc_memory, sizeof(tc_memory_i));
-
-		tc_registry->set(TC_BUDDY_MODULE_NAME, tc_buddy, sizeof(tc_buddy_i));
-
-		tc_registry->set(TC_REGION_MODULE_NAME, tc_region, sizeof(tc_region_i));
-
-		tc_registry->set(TC_TEMP_MODULE_NAME, tc_temp, sizeof(tc_registry_i));
 	}
 }

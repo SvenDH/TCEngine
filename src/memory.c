@@ -1,44 +1,39 @@
 /*==========================================================*/
 /*							MEMORY							*/
 /*==========================================================*/
-#include "memory.h"
-#include "os.h"
-#include "tcatomic.h"
-#include "tcmath.h"
-#include "lflifo.h"
+#include "private_types.h"
 
 
 static
-tc_allocator_i allocator_create_child(const tc_allocator_i* parent, const char* name)
-{
+tc_allocator_i allocator_create_child(const tc_allocator_i* parent, const char* name) {
 	tc_allocator_i a = { 0 };
 
 	return a;
 }
 
 static
-void allocator_destroy_child(const tc_allocator_i* a)
-{
+void allocator_destroy_child(const tc_allocator_i* a) {
 
 }
 
 static 
-void* vm_alloc(tc_allocator_i* a, void* ptr, size_t prev_size, size_t new_size, const char* file, uint32_t line)
-{
+void* vm_alloc(tc_allocator_i* a, void* ptr, size_t prev_size, size_t new_size, const char* file, uint32_t line) {
 	void* new_ptr = NULL;
 	if (new_size) {
 		new_ptr = tc_os->map(new_size);
-		if (prev_size) 
+		if (prev_size) {
 			memcpy(new_ptr, ptr, prev_size);
+		}
 	}
-	if (prev_size) tc_os->unmap(ptr, prev_size);
+	if (prev_size) {
+		tc_os->unmap(ptr, prev_size);
+	}
 	return new_ptr; 
 }
 
 
 static
-void* system_alloc(tc_allocator_i* a, void* ptr, size_t prev_size, size_t new_size, const char* file, uint32_t line)
-{
+void* system_alloc(tc_allocator_i* a, void* ptr, size_t prev_size, size_t new_size, const char* file, uint32_t line) {
 	return realloc(ptr, new_size);
 }
 

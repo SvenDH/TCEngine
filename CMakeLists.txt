@@ -83,7 +83,7 @@ set(MZ_ZSTD OFF CACHE BOOL "" FORCE)
 add_subdirectory(deps/minizip)
 include_directories(deps/minizip)
 
-file(GLOB tc_sources include/* src/*)
+file(GLOB tc_sources include/* src/* src/datastructures/*)
 add_library(tc_static STATIC ${tc_sources})
 
 # Put all libraries in LIBS
