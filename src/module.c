@@ -1,6 +1,8 @@
 #include "private_types.h"
 
 #include <malloc.h>
+
+#define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 
 tc_registry_i* tc_registry;
