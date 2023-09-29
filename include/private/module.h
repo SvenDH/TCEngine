@@ -1,5 +1,5 @@
 #pragma once
-#include "types.h"
+#include "core.h"
 
 #define TC_REGISTRY_MODULE_NAME "tc_registry_module"
 
@@ -22,8 +22,8 @@ typedef void tc_load(tc_registry_i* reg, bool load);
 
 typedef struct tc_allocator_i tc_allocator_i;
 
-void tc_init_registry(tc_allocator_i* a);
+void tc_init_registry();
 
-void tc_close_registry(tc_allocator_i* a);
+void tc_close_registry();
 
 void load_core(tc_registry_i* registery, bool load);

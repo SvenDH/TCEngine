@@ -2,8 +2,7 @@
 /*					LOCK-FREE PAGE LIFO/STACK				*/
 /*==========================================================*/
 #pragma once
-#include "log.h"
-#include "types.h"
+#include "core.h"
 
 /* Can only be used to store 64k aligned pointers since it uses the lower 16 bits as counter/tag to track reuse in the ABA problem */
 

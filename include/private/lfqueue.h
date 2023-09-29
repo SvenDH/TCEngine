@@ -3,8 +3,8 @@
 /*==========================================================*/
 #pragma once
 #include "memory.h"
-#include "types.h"
-#include "log.h"
+#include "core.h"
+
 
 /* This is a fixed-size (FIFO) ring buffer that allows for multiple concurrent reads and writes */
 
@@ -31,22 +31,22 @@ static inline lf_queue_t* lf_queue_init(uint32_t elements, tc_allocator_i* alloc
 	queue->mask = elements - 1;
 	TC_ASSERT((elements >= 2) && ((elements & (elements - 1)) == 0));
 	for (size_t i = 0; i != elements; i++) {
-		atomic_store(&queue->buffer[i].sequence, i, MEMORY_RELAXED);
+		atomic_store_explicit(&queue->buffer[i].sequence, i, memory_order_relaxed);
 	}
-	atomic_store(&queue->write, 0, MEMORY_RELAXED);
-	atomic_store(&queue->read, 0, MEMORY_RELAXED);
+	atomic_store_explicit(&queue->write, 0, memory_order_relaxed);
+	atomic_store_explicit(&queue->read, 0, memory_order_relaxed);
 	return queue;
 }
 
 static inline bool lf_queue_put(lf_queue_t* queue, void* data) {
 	cell_t* cell;
-	size_t pos = (size_t)atomic_load(&queue->write, MEMORY_RELAXED);
+	size_t pos = (size_t)atomic_load_explicit(&queue->write, memory_order_relaxed);
 	for (;;) {
 		cell = &queue->buffer[pos & queue->mask];
-		size_t seq = (size_t)atomic_load(&cell->sequence, MEMORY_ACQUIRE);
+		size_t seq = (size_t)atomic_load_explicit(&cell->sequence, memory_order_acquire);
 		intptr_t dif = (intptr_t)seq - (intptr_t)pos;
 		if (dif == 0) {
-			if (atomic_compare_exchange_weak(&queue->write, &pos, pos + 1, MEMORY_RELAXED, MEMORY_RELAXED)) {
+			if (atomic_compare_exchange_weak_explicit(&queue->write, &pos, pos + 1, memory_order_relaxed, memory_order_relaxed)) {
 				break;
 			}
 		}
@@ -54,23 +54,23 @@ static inline bool lf_queue_put(lf_queue_t* queue, void* data) {
 			return false;
 		}
 		else {
-			pos = (size_t)atomic_load(&queue->write, MEMORY_RELAXED);
+			pos = (size_t)atomic_load_explicit(&queue->write, memory_order_relaxed);
 		}
 	}
 	cell->data = data;
-	atomic_store(&cell->sequence, pos + 1, MEMORY_RELEASE);
+	atomic_store_explicit(&cell->sequence, pos + 1, memory_order_release);
 	return true;
 }
 
 static inline bool lf_queue_get(lf_queue_t* queue, void** data) {
 	cell_t* cell;
-	size_t pos = atomic_load(&queue->read, MEMORY_RELAXED);
+	size_t pos = atomic_load_explicit(&queue->read, memory_order_relaxed);
 	for (;;) {
 		cell = &queue->buffer[pos & queue->mask];
-		size_t seq = (size_t)atomic_load(&cell->sequence, MEMORY_ACQUIRE);
+		size_t seq = (size_t)atomic_load_explicit(&cell->sequence, memory_order_acquire);
 		intptr_t dif = (intptr_t)seq - (intptr_t)(pos + 1);
 		if (dif == 0) {
-			if (atomic_compare_exchange_weak(&queue->read, &pos, pos + 1, MEMORY_RELAXED, MEMORY_RELAXED)) {
+			if (atomic_compare_exchange_weak_explicit(&queue->read, &pos, pos + 1, memory_order_relaxed, memory_order_relaxed)) {
 				break;
 			}
 		}
@@ -78,11 +78,11 @@ static inline bool lf_queue_get(lf_queue_t* queue, void** data) {
 			return false;
 		}
 		else {
-			pos = (size_t)atomic_load(&queue->read, MEMORY_RELAXED);
+			pos = (size_t)atomic_load_explicit(&queue->read, memory_order_relaxed);
 		}
 	}
 	*data = cell->data;
-	atomic_store(&cell->sequence, pos + queue->mask + 1, MEMORY_RELEASE);
+	atomic_store_explicit(&cell->sequence, pos + queue->mask + 1, memory_order_release);
 	return true;
 }
 

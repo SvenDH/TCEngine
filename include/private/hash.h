@@ -2,7 +2,7 @@
 /*						HASH FUNCTIONS						*/
 /*==========================================================*/
 #pragma once
-#include "types.h"
+#include "core.h"
 #include "memory.h"
 
 // Code based on MurmurHash2, 64-bit versions, by Austin Appleby

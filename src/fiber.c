@@ -318,7 +318,7 @@ void tc_fiber_pool_destroy(tc_allocator_i* a) {
 
 	lf_queue_destroy(context->job_queue);
 
-	tc_free(a, context->workers, context->num_cords, sizeof(void*));
+	tc_free(a, context->workers, context->num_cords * sizeof(void*));
 	tc_free(a, context, sizeof(fiber_context_t));
 }
 
@@ -432,11 +432,11 @@ typedef struct tc_fut_s {
 static void counter_wakeup(tc_fut_t* c, size_t value) {
 	fiber_entry* slots = (fiber_entry*)(c + 1);
 	for (uint32_t i = 0; i < c->num_slots; i++) {
-		fiber_t* f = atomic_load(&slots[i].fiber, MEMORY_ACQUIRE);
+		fiber_t* f = atomic_load_explicit(&slots[i].fiber, memory_order_acquire);
 		if (f == NULL) {
 			continue;
 		}
-		if (atomic_load(&slots[i].inuse, MEMORY_ACQUIRE)) {
+		if (atomic_load_explicit(&slots[i].inuse, memory_order_acquire)) {
 			continue;
 		}
 		if (slots[i].value == value) {
@@ -446,7 +446,7 @@ static void counter_wakeup(tc_fut_t* c, size_t value) {
 			}
 			tc_fiber_ready(f);
 
-			atomic_store(&slots[i].fiber, 0, MEMORY_RELEASE);
+			atomic_store_explicit(&slots[i].fiber, 0, memory_order_release);
 		}
 	}
 }
@@ -461,10 +461,10 @@ static bool counter_add_to_waiting(tc_fut_t* c, size_t value) {
 		}
 		slots[i].value = value;
 		// Signal slot is ready
-		atomic_store(&slots[i].inuse, 0, MEMORY_ACQ_REL);
+		atomic_store(&slots[i].inuse, 0);
 
-		size_t probed = atomic_load(&c->value, MEMORY_RELAXED);
-		if (atomic_load(&slots[i].inuse, MEMORY_ACQUIRE)) {
+		size_t probed = atomic_load_explicit(&c->value, memory_order_relaxed);
+		if (atomic_load_explicit(&slots[i].inuse, memory_order_acquire)) {
 			return false;
 		}
 		if (slots[i].value == probed) {
@@ -473,7 +473,7 @@ static bool counter_add_to_waiting(tc_fut_t* c, size_t value) {
 				return false;
 			}
 			//Slot is now free, in use slays true
-			atomic_store(&slots[i].fiber, 0, MEMORY_RELEASE);
+			atomic_store_explicit(&slots[i].fiber, 0, memory_order_release);
 			return true;
 		}
 		return false;
@@ -487,10 +487,10 @@ tc_fut_t* tc_fut_new(tc_allocator_i* a, size_t value, tc_waitable_i* waitable, u
 	c->a = a;
 	c->num_slots = num_slots;
 	c->waitable = waitable;
-	atomic_store(&c->value, value, MEMORY_RELAXED);
+	atomic_store_explicit(&c->value, value, memory_order_relaxed);
 	fiber_entry* slots = (fiber_entry*)(c + 1);
 	for (uint32_t i = 0; i < c->num_slots; i++) {
-		atomic_store(&slots[i].inuse, 1, MEMORY_RELEASE);
+		atomic_store_explicit(&slots[i].inuse, 1, memory_order_release);
 	}
 	return c;
 }
@@ -503,13 +503,13 @@ void tc_fut_free(tc_fut_t* c) {
 }
 
 size_t tc_fut_incr(tc_fut_t* c) {
-	size_t val = atomic_fetch_add(&c->value, 1, MEMORY_RELAXED) + 1;
+	size_t val = atomic_fetch_add_explicit(&c->value, 1, memory_order_relaxed) + 1;
 	counter_wakeup(c, val);
 	return val;
 }
 
 size_t tc_fut_decr(tc_fut_t* c) {
-	size_t val = atomic_fetch_add(&c->value, -1, MEMORY_RELAXED) - 1;
+	size_t val = atomic_fetch_add_explicit(&c->value, -1, memory_order_relaxed) - 1;
 	counter_wakeup(c, val);
 	return val;
 }

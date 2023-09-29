@@ -18,22 +18,22 @@
 #endif
 
 #if defined(_WIN32)
-#define COMPILER_MSVC 1
-#if _MSC_VER >= 1600
-#define HAS_STDINT 1
-#endif
-#if _MSC_VER >= 1800
-#define HAS_STDBOOL 1
-#endif
-#if defined(_M_X64)
-#define CPU_X64 1
-#define PTR_SIZE 8
-#elif defined(_M_IX86)
-#define CPU_X86 1
-#define PTR_SIZE 4
-#else
-#error Unrecognized platform!
-#endif
+	#define COMPILER_MSVC 1
+	#if _MSC_VER >= 1600
+	#define HAS_STDINT 1
+	#endif
+	#if _MSC_VER >= 1800
+	#define HAS_STDBOOL 1
+	#endif
+	#if defined(_M_X64)
+	#define CPU_X64 1
+	#define PTR_SIZE 8
+	#elif defined(_M_IX86)
+	#define CPU_X86 1
+	#define PTR_SIZE 4
+	#else
+	#error Unrecognized platform!
+	#endif
 #elif defined(__GNUC__)
 #define COMPILER_GCC 1
 #define HAS_STDINT 1
@@ -74,11 +74,6 @@
 #endif
 
 /* Utility macros: */
-#define EXPAND(x) x
-
-#define _NARGS_IMPL(x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,N,...) N
-#define VA_NARGS(...) EXPAND(_NARGS_IMPL(__VA_ARGS__,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0))
-
 #define SGN(_v) (((_v) < 0) ? (-1.0) : (+1.0))
 
 #define CONCAT_IMPL( x, y ) x##y
@@ -88,7 +83,7 @@
 
 #define TC_COUNT(_x) (sizeof(_x) / sizeof(*(_x)))
 
-#define TC_ERROR(...) TRACE(LOG_ERROR, EXPAND(__VA_ARGS__))
+#define TC_ERROR(...) TRACE(LOG_ERROR, ##__VA_ARGS__)
 
 #ifdef TC_DEBUG
 #if defined(COMPILER_MSVC)
@@ -102,7 +97,7 @@
 #endif
 
 #ifdef TC_ENABLE_ASSERT
-#define TC_ASSERT(_x, ...) { if(!(_x)) {TC_ERROR("Assertion Failed: {0}", __VA_ARGS__); TC_BREAK();}}
+#define TC_ASSERT(_x, ...) { if(!(_x)) {TC_ERROR("Assertion Failed: {0}", ##__VA_ARGS__); TC_BREAK();}}
 #else
 #define TC_ASSERT(x, ...)
 #endif
@@ -165,6 +160,118 @@
 #else
 #error Unsupported platform!
 #endif
+
+/*==========================================================*/
+/*							LOGGING							*/
+/*==========================================================*/
+
+/* Logging functions: */
+enum logtype_t {
+	LOG_ALL,
+	LOG_INFO,
+	LOG_DEBUG,
+	LOG_WARNING,
+	LOG_ERROR,
+	LOG_NONE
+};
+
+typedef void (*debugcb_t)(enum logtype_t severity, const char* message, const char* function, const char* file, int line);
+
+#define TRACE(level, M, ...) fprintf(stdout, "[" #level "] " M " (%s:%d)\n", ##__VA_ARGS__, __FILE__, __LINE__)
+
+
+/*==========================================================*/
+/*							TYPES							*/
+/*==========================================================*/
+
+#include <stdint.h>
+#include <stdbool.h>
+
+typedef struct {
+	union {
+		uint64_t data;
+		double nr;
+		void* ptr;
+	};
+} variant_t;
+
+// Define math types
+//TODO: allign to simd
+typedef float vec2[2];
+typedef float vec3[3];
+typedef float vec4[4];
+typedef vec2 mat2[2];
+typedef vec3 mat3[3];
+typedef vec4 mat4[4];
+typedef int ivec2[2];
+typedef int ivec3[3];
+typedef int ivec4[4];
+typedef float rect2[4];
+typedef int irect2[4];
+
+typedef uint32_t color_t;
+
+typedef uint64_t sid_t;
+
+typedef struct { uint64_t x[2]; } tc_uuid_t;
+
+typedef union {
+	struct {
+		uint64_t index : 32;
+		uint64_t gen : 22;
+		uint64_t type : 10;
+	};
+	uint64_t handle;
+} tc_rid_t;
+
+/*
+ * Cross-platform file descriptor
+ */
+typedef struct { uint64_t handle; } fd_t;
+
+
+/*==========================================================*/
+/*							ATOMICS							*/
+/*==========================================================*/
+
+#include <stdatomic.h>
+
+/* Atomic types */
+typedef _Atomic(uint32_t) atomic32_t;
+typedef _Atomic(uint64_t) atomic64_t;
+typedef _Atomic(size_t) atomic_t;
+
+#define CAS(_x, _y, _z) \
+atomic_compare_exchange_strong_explicit((atomic_t*)(_x), (size_t*)&(_y), (size_t)(_z), memory_order_acq_rel, memory_order_acq_rel)
+
+
+/*==========================================================*/
+/*							LOCKS							*/
+/*==========================================================*/
+
+typedef struct lock_s { atomic_t value; } lock_t;
+
+#define TC_LOCK(l) spin_lock(l)
+#define TC_UNLOCK(l) spin_unlock(l)
+
+//TODO: Make fiber waiting spin lock after x amount of cycles
+static inline
+void spin_lock(lock_t* lock) {
+    for (;;) {
+        if (!atomic_exchange_explicit(&lock->value, true, memory_order_acquire)) {
+            break;
+        }
+        while (atomic_load_explicit(&lock->value, memory_order_relaxed)) {
+            pause();
+        }
+    }
+}
+
+static inline
+void spin_unlock(lock_t* lock) {
+    atomic_store_explicit(&lock->value, false, memory_order_release);
+}
+
 
 
 /*==========================================================*/

@@ -3,8 +3,6 @@
 /*==========================================================*/
 #pragma once
 #include "core.h"
-#include "log.h"
-#include "types.h"
 
 #include <string.h>
 #include <math.h>

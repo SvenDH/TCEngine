@@ -1,0 +1,30 @@
+{
+    "C_Cpp.errorSquiggles": "disabled",
+    "files.associations": {
+        "stdatomic.h": "c",
+        "vcruntime_c11_stdatomic.h": "c",
+        "vcruntime_c11_atomic_support.h": "c",
+        "atomic": "c",
+        "memory": "c",
+        "array": "c",
+        "coroutine": "c",
+        "exception": "c",
+        "format": "c",
+        "forward_list": "c",
+        "functional": "c",
+        "future": "c",
+        "iomanip": "c",
+        "list": "c",
+        "sstream": "c",
+        "system_error": "c",
+        "type_traits": "c",
+        "vector": "c",
+        "xlocale": "c",
+        "xmemory": "c",
+        "xstring": "c",
+        "xtree": "c",
+        "chrono": "c",
+        "memory.h": "c",
+        "stb_ds.h": "c"
+    }
+}

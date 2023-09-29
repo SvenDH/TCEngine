@@ -2,8 +2,9 @@
 /*							STRINGS							*/
 /*==========================================================*/
 #pragma once
-#include "types.h"
+#include "core.h"
 #include "hash.h"
+#include <stb_ds.h>
 
 typedef struct stringentry_s stringentry_t;
 

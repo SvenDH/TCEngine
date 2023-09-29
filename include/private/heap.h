@@ -2,10 +2,8 @@
 /*						HEAP MANAGER						*/
 /*==========================================================*/
 #pragma once
-#include "slab.h"
+#include "memory.h"
 #include "tree.h"
-
-typedef struct tc_allocator_i tc_allocator_i;
 
 struct offsetblock_t {
 	rbnode_t offset;

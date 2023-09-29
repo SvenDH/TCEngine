@@ -5,4 +5,4 @@
 
 #include "tc.h"
 #include "private/bitvec.h"
-#include "private/hash.h"
+//#include "private/hash.h"

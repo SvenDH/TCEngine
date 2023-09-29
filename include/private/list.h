@@ -2,8 +2,6 @@
 /*							LISTS							*/
 /*==========================================================*/
 #pragma once
-#include "log.h"
-#include "core.h"
 
 // To loop over all list elements:
 #ifndef list_foreach
@@ -50,24 +48,24 @@ static inline lifo_t* lifo_pop(lifo_t* list)
 }
 
 static inline void slist_init(slist_t* list)
-{ list->next = NULL; list->tail = list; }
+{ list->next = NULL; list->tail = (lifo_t*)list; }
 
 static inline bool slist_empty(slist_t* list)
 { return list->next == NULL; }
 
 static inline void slist_push_front(slist_t* list, lifo_t* node)
 {
-	if (lifo_empty(list))
+	if (lifo_empty((lifo_t*)list))
 		list->tail = node;
 
-	lifo_push(list, node);
+	lifo_push((lifo_t*)list, node);
 }
 
 static inline lifo_t* slist_pop_front(slist_t* list)
 {
-	lifo_t* node = lifo_pop(list);
-	if (lifo_empty(list))
-		list->tail = list;
+	lifo_t* node = lifo_pop((lifo_t*)list);
+	if (lifo_empty((lifo_t*)list))
+		list->tail = (lifo_t*)list;
 	return node;
 }
 

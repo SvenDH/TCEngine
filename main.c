@@ -1,7 +1,5 @@
 #include "tc.h"
 
-tc_strpool_t pool;
-
 tc_allocator_i* a;
 
 static void* producer(void* args) {
@@ -56,17 +54,15 @@ static void* main_fiber(void* args) {
 int main(void) {
 	a = tc_buddy_new(tc_memory->vm, GLOBAL_BUFFER_SIZE, 64);
 
-	tc_init_registry(a);
+	tc_init_registry();
 	tc_fiber_pool_init(a, 256);
-	assets_init(a);
 
 
 	jobdecl_t main_job = { main_fiber, a };
 	tc_fut_t* c = tc_run_jobs(&main_job, 1, NULL);
 	tc_fut_wait_and_free(c, 0);
 	
-	assets_close(a);
-	tc_close_registry(a);
+	tc_close_registry();
 	tc_fiber_pool_destroy(a);
 	return 0;
 }

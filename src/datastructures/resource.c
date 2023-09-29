@@ -30,7 +30,7 @@ tc_rslab_i* res_create(size_t obj_size, tc_allocator_i* base) {
 	res->obj_size = obj_size;
 	res->cap = 0;
 	res->used = 0;
-	res->type = atomic_fetch_add(&res_id, 1, MEMORY_ACQUIRE);
+	res->type = atomic_fetch_add_explicit(&res_id, 1, memory_order_acquire);
 	res->instance = res;
 	res->alloc = res_alloc;
 	res->free = res_free;

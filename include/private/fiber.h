@@ -2,7 +2,7 @@
 /*							THREADS							*/
 /*==========================================================*/
 #pragma once
-#include "types.h"
+#include "core.h"
 
 /**
  * A counter handle. Fibers can wait on counters to get to a value.

@@ -31,7 +31,7 @@ void* arena_alloc(
 		if ((ptr = lf_lifo_pop(&arena->free))) 
 			return ptr;
 		
-		size_t used = atomic_fetch_add(&arena->used, arena->slab_size, MEMORY_ACQ_REL);
+		size_t used = atomic_fetch_add_explicit(&arena->used, arena->slab_size, memory_order_acq_rel);
 		used += arena->slab_size;
 		if (used <= arena->cap) {
 			ptr = arena->arena + used - arena->slab_size;

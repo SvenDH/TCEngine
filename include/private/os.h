@@ -2,7 +2,7 @@
 /*								OS							*/
 /*==========================================================*/
 #pragma once
-#include "types.h"
+#include "core.h"
 
 #define TC_OS_MODULE_NAME "tc_os_module"
 

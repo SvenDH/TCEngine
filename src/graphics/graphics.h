@@ -395,7 +395,7 @@ typedef struct {
 		/* Which channels on the render target are written to */
 		enum colormask_t write_mask;			
 	} rendertargets[RENDER_TARGETS_MAX];
-} blend_params;
+} blend_params_t;
 
 /* Describes rasterization options for a pipeline */
 typedef struct {
@@ -417,7 +417,7 @@ typedef struct {
 	int32_t depth_bias;
 	/* Scales pixel slope before adding pisel depth */
 	float scale_depth_bias;
-} rasterizer_params;
+} rasterizer_params_t;
 
 /* Depth and stencil buffer creation options */
 typedef struct {
@@ -444,7 +444,7 @@ typedef struct {
 	bool depth_write_enabled;
 	/* What camparison function is used to compare render target depth with pixel depth */
 	enum comparefunc_t depth_func;
-} depthstencil_params;
+} depthstencil_params_t;
 
 /* Sampler creation options */
 typedef struct {
@@ -468,7 +468,7 @@ typedef struct {
 	vec4 border_color;
 	/* If compare filter is used this function will be used to compare between old en new samples */
 	enum comparefunc_t compare_filter_func;
-} sampler_params;
+} sampler_params_t;
 
 /* Texture creation options */
 typedef struct {
@@ -483,7 +483,7 @@ typedef struct {
 	uint32_t depth;
 	uint32_t miplevels;
 	uint32_t samples;
-} texture_params;
+} texture_params_t;
 
 typedef struct {
 	enum uavflags_t uav_access;
@@ -495,13 +495,13 @@ typedef struct {
 	uint32_t start;
 	uint32_t depth;
 	uint32_t levels;
-} textureview_params;
+} textureview_params_t;
 
 /* Shader type: */
 typedef struct {
 	enum shadertype_t type;
 	const char* code;
-} shader_params;
+} shader_params_t;
 
 typedef struct {
 	enum usagehint_t usage;
@@ -510,7 +510,7 @@ typedef struct {
 	enum buffermode_t mode;
 	uint32_t size;
 	uint32_t stride;
-} buffer_params;
+} buffer_params_t;
 
 typedef struct {
 	enum bufferviewtype_t type;
@@ -519,7 +519,7 @@ typedef struct {
 	bool normalized;
 	uint32_t offset;
 	uint32_t size;
-} bufferview_params;
+} bufferview_params_t;
 
 typedef struct texturedata_s {
 	/* Pointer to the GPU buffer that contains subresource data */
@@ -556,7 +556,7 @@ typedef struct attribute_s {
 typedef struct {
 	attribute_t* attributes;
 	uint32_t num_attributes;
-} attribute_params;
+} attribute_params_t_t;
 
 typedef struct shadervar_s {
 	sid_t name;
@@ -565,7 +565,7 @@ typedef struct shadervar_s {
 } shadervar_t;
 
 typedef struct staticsampler_s {
-	sampler_params caps;
+	sampler_params_t caps;
 	sid_t name;
 	enum shadertype_t stages;
 } staticsampler_t;
@@ -575,10 +575,10 @@ typedef struct {
 	uint32_t num_variables;
 	staticsampler_t* samplers;
 	uint32_t num_samplers;
-} uniform_params;
+} uniform_params_t;
 
 typedef struct shader_s {
-	shader_params caps;
+	shader_params_t caps;
 
 } shader_t;
 
@@ -591,15 +591,15 @@ typedef struct {
 	shader_t* hull_shader;
 	shader_t* compute_shader;
 	/* Rasterization options that determine is and how traingles are rendered to the raster */
-	rasterizer_params raster;
+	rasterizer_params_t raster;
 	/* Blending operations applied on the render targets */
-	blend_params blending;
+	blend_params_t blending;
 	/* Depth adn stencil buffer options */
-	depthstencil_params depthstencil;
+	depthstencil_params_t depthstencil;
 	/* Attribute layout for vertex buffer */
-	attribute_params attributes;
+	attribute_params_t_t attributes;
 	/* Uniform layout for shader variables and samplers */
-	uniform_params uniforms;
+	uniform_params_t uniforms;
 	/* Number of viewports to render from */
 	uint8_t num_viewports;
 	/* Number of render targets to render to */
@@ -612,7 +612,7 @@ typedef struct {
 	/* Quality of the multisampler */
 	uint8_t sample_quality;
 	/* Sampler options to be used with multisampling */
-	sampler_params multisampler;
+	sampler_params_t multisampler;
 	/* Pixel format to use for collor buffers */
 	enum pixeltype_t color_format[RENDER_TARGETS_MAX];
 	/* Pixel format to use for depth and stencil buffers */
@@ -621,10 +621,10 @@ typedef struct {
 	bool seperable;
 	/* Whether this pipeline is a compute shader pipeline */
 	bool is_compute;
-} pipeline_params;
+} pipeline_params_t;
 
 typedef struct pipeline_s {
-	pipeline_params caps;
+	pipeline_params_t caps;
 	/* All shaders that are part of the pipeline (0 if not used) */
 	shader_t* shaders[SHADER_MAX];
 	/* Number of shaders this pipeline uses */
@@ -655,7 +655,7 @@ typedef struct {
 	enum resourcestate_t initial_state;
 	/* State the attachment texture subresource will be transitioned to when a render pass instance ends */
 	enum resourcestate_t final_state;
-} attachment_params;
+} attachment_params_t;
 
 typedef struct {
 	uint32_t index;
@@ -672,7 +672,7 @@ typedef struct {
 	attachment_ref* depthstencil_attachments;
 	uint32_t num_preserve_attachments;
 	uint32_t* preserve_attachments;
-} subpass_params;
+} subpass_params_t;
 
 typedef struct {
 	uint32_t src_pass;
@@ -681,16 +681,16 @@ typedef struct {
 	uint32_t dst_stage_mask;
 	uint32_t src_access_mask;
 	uint32_t dst_access_mask;
-} passdependency_params;
+} passdependency_params_t;
 
 typedef struct {
 	uint32_t num_attachments;
-	attachment_params* attachments;
+	attachment_params_t* attachments;
 	uint32_t num_subpasses;
-	subpass_params* subpasses;
+	subpass_params_t* subpasses;
 	uint32_t num_dependencies;
-	passdependency_params* dependencies;
-} renderpass_params;
+	passdependency_params_t* dependencies;
+} renderpass_params_t;
 
 inline size_t datatype_size(enum datavartype_t type) {
 	switch (type) {
@@ -707,7 +707,7 @@ inline size_t datatype_size(enum datavartype_t type) {
 	}
 }
 
-inline enum shadervartype_t shader_variable_type(uint8_t stages, sid_t name, const uniform_params* layout) {
+inline enum shadervartype_t shader_variable_type(uint8_t stages, sid_t name, const uniform_params_t* layout) {
 	for (uint32_t i = 0; i < layout->num_variables; i++) {
 		shadervar_t* var = &layout->variables[i];
 		if ((var->stages & stages) && (var->name == name))
@@ -725,7 +725,7 @@ inline int32_t find_static_sampler_index(staticsampler_t* samplers, uint32_t num
 	return -1;
 }
 
-inline uint32_t compute_mip_levels(texture_params* caps) {
+inline uint32_t compute_mip_levels(texture_params_t* caps) {
 	uint32_t length = 0;
 	if (caps->type == TEXTURE_1D || caps->type == TEXTURE_1D_ARRAY)
 		length = caps->width;
@@ -753,7 +753,7 @@ typedef struct miplevel_s {
 	uint32_t mipsize;
 } miplevel_t;
 
-inline miplevel_t get_mip_level(texture_params* caps, uint32_t level) {
+inline miplevel_t get_mip_level(texture_params_t* caps, uint32_t level) {
 	miplevel_t miplevel = { 0 };
 	pixelblockinfo_t fmt = pixel_block_format(caps->format);
 	miplevel.width_pow2 = max(caps->width >> level, 1u);
@@ -781,7 +781,6 @@ enum device_feature_state_t {
 enum renderer_type_t {
 	RENDERER_UNKNOWN = 0,
 	RENDERER_VULKAN,
-	RENDERER_OPENGL,
 };
 
 typedef struct gfxfeatures_s {
@@ -911,4 +910,4 @@ typedef struct graphicscaps_s {
 void gfx_init(tc_allocator_i* a);
 void gfx_close();
 
-void pipeline_init(pipeline_t* pipe, pipeline_params caps);
+void pipeline_init(pipeline_t* pipe, pipeline_params_t caps);
