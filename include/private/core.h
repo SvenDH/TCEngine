@@ -13,6 +13,10 @@
 #define TC_DEBUG 1
 #endif
 
+#ifndef TC_COMPILE_ASSERT and defined(DEBUG)
+#define TC_COMPILE_ASSERT static_assert
+#endif
+
 #ifndef TC_ENABLE_ASSERT and defines(DEBUG)
 #define TC_ENABLE_ASSERT 1
 #endif
@@ -161,6 +165,10 @@
 #error Unsupported platform!
 #endif
 
+#ifndef VULKAN
+#define VULKAN 1
+#endif
+
 /*==========================================================*/
 /*							LOGGING							*/
 /*==========================================================*/
@@ -237,39 +245,41 @@ typedef struct { uint64_t handle; } fd_t;
 #include <stdatomic.h>
 
 /* Atomic types */
-typedef _Atomic(uint32_t) atomic32_t;
-typedef _Atomic(uint64_t) atomic64_t;
+//typedef _Atomic(uint32_t) atomic32_t;
+//typedef _Atomic(uint64_t) atomic64_t;
 typedef _Atomic(size_t) atomic_t;
 
 #define CAS(_x, _y, _z) \
-atomic_compare_exchange_strong_explicit((atomic_t*)(_x), (size_t*)&(_y), (size_t)(_z), memory_order_acq_rel, memory_order_acq_rel)
+atomic_compare_exchange_weak((atomic_t*)(_x), (size_t*)&(_y), (size_t)(_z))
+//memory_order_relaxed)
 
 
 /*==========================================================*/
 /*							LOCKS							*/
 /*==========================================================*/
 
-typedef struct lock_s { atomic_t value; } lock_t;
+typedef struct lock_s { atomic_flag value; } lock_t;
 
 #define TC_LOCK(l) spin_lock(l)
 #define TC_UNLOCK(l) spin_unlock(l)
 
+static inline
+void spin_lock_init(lock_t* lock)
+{
+    atomic_flag_clear(&lock->value);
+}
+
 //TODO: Make fiber waiting spin lock after x amount of cycles
 static inline
-void spin_lock(lock_t* lock) {
-    for (;;) {
-        if (!atomic_exchange_explicit(&lock->value, true, memory_order_acquire)) {
-            break;
-        }
-        while (atomic_load_explicit(&lock->value, memory_order_relaxed)) {
-            pause();
-        }
-    }
+void spin_lock(lock_t* lock)
+{
+    while(atomic_flag_test_and_set_explicit(&lock->value, memory_order_acquire)) {}
 }
 
 static inline
-void spin_unlock(lock_t* lock) {
-    atomic_store_explicit(&lock->value, false, memory_order_release);
+void spin_unlock(lock_t* lock)
+{
+    atomic_flag_clear_explicit(&lock->value, memory_order_release);
 }
 
 
@@ -416,11 +426,6 @@ enum window_flags {
 	WTRANSPARENT = 1 << 3,
 	WVSYNC = 1 << 4,
 	WCONTINUEMINIMIZED = 1 << 5,
-};
-
-enum graphics_library_t {
-    GL_VULKAN,
-    GL_OPENGL,
 };
 
 void window_create(int width, int height, const char* title);

@@ -4,7 +4,7 @@
 #include "private_types.h"
 
 #include <uv.h>
-
+#include <stb_ds.h>
 
 void* mem_map(size_t size) {
 #ifdef _WIN32
@@ -161,7 +161,7 @@ void os_cb(uv_fs_t* req) {
 			while (uv_fs_scandir_next(req, &ent) != UV_EOF) {
 				if (ent.name) {
 					size_t len = strlen(ent.name) + 1;
-					buff_add(paths, len, handle->temp);
+					arraddnptr(paths, len);
 					memcpy(paths + i, ent.name, len);
 					i += len;
 				}

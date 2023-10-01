@@ -21,7 +21,7 @@ typedef struct tc_allocator_i tc_allocator_i;
 */
 typedef int64_t (*job_func)(void*);
 
-typedef struct jobdecl_s {
+typedef struct {
 	/* 
 	 * Job function to be executed by a fiber 
 	 */
@@ -74,7 +74,7 @@ void tc_fiber_pool_destroy(tc_allocator_i* a);
 /** Waitable object interface associated with a counter */
 #define TC_NOT_FINISHED 0xdfffffff
 
-typedef struct tc_waitable_i {
+typedef struct {
 	/** The waitable object that will be freed */
 	void* instance;
 	/** Counter will call the destructor (dtor) function when it is freed. */
@@ -124,7 +124,7 @@ tc_fut_t* tc_timer_start(uint64_t timeout, uint64_t repeats);
 
 typedef struct tc_channel_s tc_channel_t;
 
-typedef struct tc_put_s {
+typedef struct {
 	tc_channel_t* channel;
 	void* value;
 } tc_put_t;

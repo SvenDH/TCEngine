@@ -2,8 +2,7 @@
 /*						LOCK-FREE QUEUE						*/
 /*==========================================================*/
 #pragma once
-#include "memory.h"
-#include "core.h"
+#include "tc.h"
 
 
 /* This is a fixed-size (FIFO) ring buffer that allows for multiple concurrent reads and writes */
@@ -43,10 +42,10 @@ static inline bool lf_queue_put(lf_queue_t* queue, void* data) {
 	size_t pos = (size_t)atomic_load_explicit(&queue->write, memory_order_relaxed);
 	for (;;) {
 		cell = &queue->buffer[pos & queue->mask];
-		size_t seq = (size_t)atomic_load_explicit(&cell->sequence, memory_order_acquire);
+		size_t seq = (size_t)atomic_load(&cell->sequence);
 		intptr_t dif = (intptr_t)seq - (intptr_t)pos;
 		if (dif == 0) {
-			if (atomic_compare_exchange_weak_explicit(&queue->write, &pos, pos + 1, memory_order_relaxed, memory_order_relaxed)) {
+			if (CAS(&queue->write, &pos, pos + 1)) {
 				break;
 			}
 		}
@@ -67,10 +66,10 @@ static inline bool lf_queue_get(lf_queue_t* queue, void** data) {
 	size_t pos = atomic_load_explicit(&queue->read, memory_order_relaxed);
 	for (;;) {
 		cell = &queue->buffer[pos & queue->mask];
-		size_t seq = (size_t)atomic_load_explicit(&cell->sequence, memory_order_acquire);
+		size_t seq = (size_t)atomic_load(&cell->sequence);
 		intptr_t dif = (intptr_t)seq - (intptr_t)(pos + 1);
 		if (dif == 0) {
-			if (atomic_compare_exchange_weak_explicit(&queue->read, &pos, pos + 1, memory_order_relaxed, memory_order_relaxed)) {
+			if (CAS(&queue->read, &pos, pos + 1)) {
 				break;
 			}
 		}

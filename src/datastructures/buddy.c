@@ -2,6 +2,8 @@
 /*						BUDDY ALLOCATOR						*/
 /*==========================================================*/
 #include "private_types.h"
+#include "datastructures/list.h"
+#include "datastructures/bitvec.h"
 
 /*( Buddy allocator type: */
 enum {
@@ -11,7 +13,7 @@ enum {
 	MAX_BUDDY_THREADS = 64,
 };
 
-typedef struct buddy_allocator_s {
+typedef struct {
 	size_t cap;								// Biggest allocation size that takes up the whole buffer
 	uint32_t min_size;						// Minimal size of an allocation
 	uint32_t nr_levels;						// Total number of levels (number block/allocation sizes)

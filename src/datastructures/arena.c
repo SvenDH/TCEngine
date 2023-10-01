@@ -5,7 +5,7 @@
 
 /* Thread save slab allocator: */
 
-typedef struct slab_arena_s {
+typedef struct {
 	atomic_t free;							// Lock-free free list of slabs that are free
 	char* arena;							// A preallocated arena of size = prealloc
 	size_t cap;								// How much memory is available

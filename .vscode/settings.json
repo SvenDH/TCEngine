@@ -25,6 +25,14 @@
         "xtree": "c",
         "chrono": "c",
         "memory.h": "c",
-        "stb_ds.h": "c"
+        "stb_ds.h": "c",
+        "fcontext.h": "c",
+        "bitvec.h": "c",
+        "lflifo.h": "c",
+        "ostream": "c",
+        "malloc.h": "c",
+        "list.h": "c",
+        "tc.h": "c",
+        "tinyimageformat.h": "c"
     }
 }

@@ -11,13 +11,13 @@ for ((_node) = (_list)->next; (list_t*)(_list) != (list_t*)(_node); (_node) = (_
 
 /* Simple signly linked list */
 
-typedef struct lifo_s {
+typedef struct {
 	struct lifo_s* next;
 } lifo_t;
 
 /* Signly linked list with cached pointer to tail node */
 
-typedef struct slist_s {
+typedef struct {
 	lifo_t;
 	lifo_t* tail;
 } slist_t;

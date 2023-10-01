@@ -3,7 +3,7 @@
 /*==========================================================*/
 #include "private_types.h"
 
-typedef struct resources_s {
+typedef struct {
 	tc_rslab_i;
 	tc_allocator_i* base;
 	uint8_t** chunks;

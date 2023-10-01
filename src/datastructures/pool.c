@@ -5,7 +5,7 @@
 
 /* Memory pool */
 
-typedef struct mempool_s {
+typedef struct {
 	tc_allocator_i* parent;
 	uint8_t** data;
 	void* freed;

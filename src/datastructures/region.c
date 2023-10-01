@@ -2,9 +2,10 @@
 /*					REGION ALLOCATOR						*/
 /*==========================================================*/
 #include "private_types.h"
+#include "datastructures/lflifo.h"
 
 
-typedef struct region_s {
+typedef struct {
 	tc_allocator_i base;
 	lf_lifo_t slabs;
 	tc_allocator_i* parent;

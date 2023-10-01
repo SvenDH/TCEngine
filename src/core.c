@@ -216,7 +216,7 @@ void window_create(int width, int height, const char* title)
 	glfwSetWindowIconifyCallback(handle, windowfocus_cb);
 	glfwSetDropCallback(handle, windowdrop_cb);
 
-	if (window.lib_type == GL_OPENGL) {
+	if (window.lib_type == 1) {
 		glfwMakeContextCurrent(handle);
 
 		glfwSwapInterval(0);

@@ -14,17 +14,6 @@
 #define NULL_RECT (rect2){0.0f, 0.0f, 0.0f, 0.0f}
 #define EPSILON 0.0001f
 
-enum comparefunc_t {
-	COMPARE_FAIL = 0,
-	COMPARE_LESS,
-	COMPARE_LEQUAL,
-	COMPARE_EQUAL,
-	COMPARE_GEQUAL,
-	COMPARE_GREATER,
-	COMPARE_NOTEQUAL,
-	COMPARE_PASS,
-};
-
 
 /* Integer utils: */
 static const int log2_tab32[32] = {
