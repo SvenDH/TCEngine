@@ -22,7 +22,7 @@ void* res_get(tc_rslab_i* r, tc_rid_t id);
 void res_free(tc_rslab_i* r, tc_rid_t id);
 
 tc_rslab_i* res_create(size_t obj_size, tc_allocator_i* base) {
-	resources_t* res = tc_malloc(base, sizeof(resources_t));
+	resources_t* res = TC_ALLOC(base, sizeof(resources_t));
 	res->base = base;
 	res->chunks = NULL;
 	res->free_list = NULL;
@@ -43,12 +43,12 @@ void res_destroy(tc_rslab_i* r) {
 	uint32_t elements = CHUNK_SIZE / res->obj_size;
 	uint32_t chunks = res->used == 0 ? 0 : (res->cap / elements);
 	for (uint32_t i = 0; i < chunks; i++) {
-		tc_free(res->base, res->chunks[i], CHUNK_SIZE);
+		TC_FREE(res->base, res->chunks[i], CHUNK_SIZE);
 	}
-	tc_free(res->base, res->chunks, sizeof(void*) * chunks);
-	tc_free(res->base, res->entries, sizeof(uint32_t) * chunks);
-	tc_free(res->base, res->free_list, sizeof(uint32_t) * chunks);
-	tc_free(res->base, res, sizeof(resources_t));
+	TC_FREE(res->base, res->chunks, sizeof(void*) * chunks);
+	TC_FREE(res->base, res->entries, sizeof(uint32_t) * chunks);
+	TC_FREE(res->base, res->free_list, sizeof(uint32_t) * chunks);
+	TC_FREE(res->base, res, sizeof(resources_t));
 }
 
 tc_rid_t res_alloc(tc_rslab_i* r) {
@@ -56,15 +56,15 @@ tc_rid_t res_alloc(tc_rslab_i* r) {
 	uint32_t elements = CHUNK_SIZE / res->obj_size;
 	if (res->used == res->cap) {
 		uint32_t chunks = res->used == 0 ? 0 : (res->cap / elements);
-		res->chunks = tc_realloc(res->base, res->chunks,
+		res->chunks = TC_REALLOC(res->base, res->chunks,
 			sizeof(void*) * chunks, sizeof(void*) * (chunks + 1));
-		res->chunks[chunks] = tc_malloc(res->base, CHUNK_SIZE);
-		res->entries = tc_realloc(
+		res->chunks[chunks] = TC_ALLOC(res->base, CHUNK_SIZE);
+		res->entries = TC_REALLOC(
 			res->base, res->entries,
 			sizeof(uint32_t) * chunks * elements,
 			sizeof(uint32_t) * (chunks + 1) * elements
 		);
-		res->free_list = tc_realloc(
+		res->free_list = TC_REALLOC(
 			res->base, res->free,
 			sizeof(uint32_t) * chunks * elements,
 			sizeof(uint32_t) * (chunks + 1) * elements

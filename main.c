@@ -76,7 +76,7 @@ static void* main_fiber(void* args) {
 }
 
 int main(void) {
-	a = tc_buddy_new(tc_memory->vm, GLOBAL_BUFFER_SIZE, 64);
+	a = tc_buddy_new(tc_mem->vm, GLOBAL_BUFFER_SIZE, 64);
 
 	tc_init_registry();
 	tc_fiber_pool_init(a, 1024);

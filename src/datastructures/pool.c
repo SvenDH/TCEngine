@@ -22,7 +22,7 @@ tc_allocator_i mempool_create(size_t objsize, tc_allocator_i* a)
 	TC_ASSERT(objsize <= CHUNK_SIZE, 
 		"[Memory]: Max object size for mempool is %i but size is %i", CHUNK_SIZE, objsize);
 
-	mempool_t* pool = tc_malloc(a, sizeof(mempool_t));
+	mempool_t* pool = TC_ALLOC(a, sizeof(mempool_t));
 	pool->parent = a;
 	pool->data = NULL;
 	pool->freed = NULL;
@@ -65,16 +65,16 @@ void* mempool_alloc(
 			uint8_t** old_blocks = blocks;
 			size_t new_blocks = (size_t)(nr_blocks ? nr_blocks * 2 : 1) * sizeof(uint8_t*);
 			blocks = memset(
-				tc_malloc(p->parent, new_blocks), 
+				TC_ALLOC(p->parent, new_blocks), 
 				0, 
 				new_blocks);
 			p->data = memcpy(blocks, old_blocks, nr_blocks * sizeof(uint8_t*));
 			p->cap = nr_blocks ? (p->cap * 2) : CHUNK_SIZE;
 			if (nr_blocks > 1) 
-				tc_free(p->parent, old_blocks, nr_blocks * sizeof(uint8_t*));
+				TC_FREE(p->parent, old_blocks, nr_blocks * sizeof(uint8_t*));
 		}
 		if (blocks[p->index] == NULL)
-			blocks[p->index] = tc_malloc(p->parent, CHUNK_SIZE);
+			blocks[p->index] = TC_ALLOC(p->parent, CHUNK_SIZE);
 	}
 	ptr = blocks[p->index] + (p->used % CHUNK_SIZE);
 	p->used += new_size;
@@ -90,7 +90,7 @@ void mempool_clear(tc_allocator_i* a)
 	if (p->data) {
 		uint32_t nr_blocks = p->cap / CHUNK_SIZE;
 		for (uint32_t i = 0; i < nr_blocks; i++)
-			tc_free(p->parent, p->data[i], CHUNK_SIZE);
+			TC_FREE(p->parent, p->data[i], CHUNK_SIZE);
 	}
 }
 
@@ -104,7 +104,7 @@ void mempool_destroy(tc_allocator_i* a)
 	mempool_clear(p);
 	if (p->data) {
 		size_t nr_blocks = (p->cap / CHUNK_SIZE);
-		tc_free(p->parent, p->data, nr_blocks * sizeof(uint8_t*));
+		TC_FREE(p->parent, p->data, nr_blocks * sizeof(uint8_t*));
 	}
-	tc_free(p->parent, p, sizeof(mempool_t));
+	TC_FREE(p->parent, p, sizeof(mempool_t));
 }

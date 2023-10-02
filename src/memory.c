@@ -24,13 +24,9 @@ void* vm_alloc(tc_allocator_i* a, void* ptr, size_t prev_size, size_t new_size, 
 	void* new_ptr = NULL;
 	if (new_size) {
 		new_ptr = tc_os->map(new_size);
-		if (prev_size) {
-			memcpy(new_ptr, ptr, prev_size);
-		}
+		if (prev_size) memcpy(new_ptr, ptr, prev_size);
 	}
-	if (prev_size) {
-		tc_os->unmap(ptr, prev_size);
-	}
+	if (prev_size) tc_os->unmap(ptr, prev_size);
 	return new_ptr; 
 }
 
@@ -51,8 +47,8 @@ static tc_allocator_i vm_allocator = {
 	.alloc = vm_alloc,
 };
 
-tc_memory_i* tc_memory = &(tc_memory_i) {
-	.system = &system_allocator,
+tc_memory_i* tc_mem = &(tc_memory_i) {
+	.sys = &system_allocator,
 	.vm = &vm_allocator,
 	.create_child = allocator_create_child,
 	.destroy_child = allocator_destroy_child,

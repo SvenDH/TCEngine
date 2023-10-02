@@ -107,7 +107,7 @@ uv_once_t init = UV_ONCE_INIT;
 
 static void* mem_malloc(size_t size) {
 	if (size) {
-		uint32_t* s = tc_malloc(context->allocator, size + sizeof(uint32_t));
+		uint32_t* s = TC_ALLOC(context->allocator, size + sizeof(uint32_t));
 		*s = (uint32_t)size;
 		return s + 1;
 	}
@@ -121,7 +121,7 @@ static void* mem_calloc(size_t count, size_t size) {
 static void mem_free(void* ptr) {
 	if (ptr) {
 		uint32_t* s = ((uint32_t*)ptr) - 1;
-		tc_free(context->allocator, s, (*s) + sizeof(uint32_t));
+		TC_FREE(context->allocator, s, (*s) + sizeof(uint32_t));
 	}
 }
 
@@ -135,14 +135,14 @@ static void* mem_realloc(void* ptr, size_t size) {
 	}
 	uint32_t* s = ((uint32_t*)ptr) - 1;
 	ptr = memcpy(mem_malloc(size), ptr, *s);
-	tc_free(context->allocator, s, (*s) + sizeof(uint32_t));
+	TC_FREE(context->allocator, s, (*s) + sizeof(uint32_t));
 	return ptr;
 }
 
 void init_context() {
-	context = tc_malloc(tc_memory->system, sizeof(struct context_t));
+	context = TC_ALLOC(tc_mem->system, sizeof(struct context_t));
 	memset(context, 0, sizeof(struct context_t));
-	context->allocator = tc_buddy_new(tc_memory->vm, OS_ALLOCATOR_SIZE, OS_MIN_ALLOC_SIZE);
+	context->allocator = tc_buddy_new(tc_mem->vm, OS_ALLOCATOR_SIZE, OS_MIN_ALLOC_SIZE);
 	slab_create(&context->pool, context->allocator, CHUNK_SIZE);
 	
 	//uv_replace_allocator(mem_malloc, mem_realloc, mem_calloc, mem_free);
@@ -291,7 +291,7 @@ const char* os_tmpdir(tc_allocator_i* temp) {
 	char tempbuf[1024];
 	size_t len = 1024;
 	uv_os_tmpdir(tempbuf, &len);
-	char* buf = tc_malloc(temp, (len + 1));
+	char* buf = TC_ALLOC(temp, (len + 1));
 	memcpy(buf, tempbuf, len);
 	buf[len] = '\0';
 	return buf;
@@ -301,7 +301,7 @@ const char* os_getcwd(tc_allocator_i* temp) {
 	char tempbuf[1024];
 	size_t len = 1024;
 	uv_cwd(tempbuf, &len);
-	char* buf = tc_malloc(temp, (len + 1));
+	char* buf = TC_ALLOC(temp, (len + 1));
 	memcpy(buf, tempbuf, len);
 	buf[len] = '\0';
 	return buf;

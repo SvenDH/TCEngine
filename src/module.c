@@ -144,6 +144,6 @@ void load_core(tc_registry_i* registery, bool load) {
 
 		tc_registry->set(TC_OS_MODULE_NAME, tc_os, sizeof(tc_os_i));
 
-		tc_registry->set(TC_ALLOCATION_MODULE_NAME, tc_memory, sizeof(tc_memory_i));
+		tc_registry->set(TC_ALLOCATION_MODULE_NAME, tc_mem, sizeof(tc_memory_i));
 	}
 }

@@ -25,7 +25,7 @@ static void* region_alloc(tc_allocator_i* a, void* ptr, size_t old_size, size_t 
 /* Region allocator functions: */
 
 tc_allocator_i* region_create(tc_allocator_i* base) {
-	region_t* region = tc_malloc(base, sizeof(region_t));
+	region_t* region = TC_ALLOC(base, sizeof(region_t));
 	region->parent = base;
 	region->slabs.next = 0;
 	region->base.instance = region;
@@ -38,7 +38,7 @@ void* region_aligned_alloc(region_t* region, size_t size, size_t align) {
 	if (lf_lifo_is_empty(&region->slabs) || (_align_ptr(r->head, align) + size - (size_t)r < r->size)) {
 		// If no region exists or region is too full allocate new slab
 		size_t slab_size = max(next_power_of_2(size + sizeof(struct rslab)), SLAB_MIN_SIZE);
-		r = tc_malloc(region->parent, slab_size);
+		r = TC_ALLOC(region->parent, slab_size);
 		r->size = slab_size;
 		r->head = (size_t)r + sizeof(struct rslab);
 		lf_lifo_push(&region->slabs, r);
@@ -64,7 +64,7 @@ void region_clear(tc_allocator_i* a) {
 	region_t* region = a->instance;
 	for (;;) {
 		struct rslab* r = lf_lifo_pop(&region->slabs);
-		if (r) tc_free(region->parent, r, r->size);
+		if (r) TC_FREE(region->parent, r, r->size);
 		else return;
 	}
 }

@@ -37,14 +37,19 @@ typedef struct tc_allocator_i {
 	void* (*alloc)(tc_allocator_i* a, void* ptr, size_t prev_size, size_t new_size, const char* file, uint32_t line);
 } tc_allocator_i;
 
-#define tc_malloc(_a, _s) (_a)->alloc(_a, NULL, 0, _s, __FILE__, __LINE__)
-#define tc_malloc_at(_a, _s, file, line) (_a)->alloc(_a, NULL, 0, _s, file, line)
-#define tc_free(_a, _p, _s) (_a)->alloc(_a, _p, _s, 0, __FILE__, __LINE__)
-#define tc_realloc(_a, _p, _prev, _new) (_a)->alloc(_a, _p, _prev, _new, __FILE__, __LINE__)
+#define TC_ALLOC(_a, _s) (_a)->alloc(_a, NULL, 0, _s, __FILE__, __LINE__)
+#define TC_ALLOCAT(_a, _s, file, line) (_a)->alloc(_a, NULL, 0, _s, file, line)
+#define TC_FREE(_a, _p, _s) (_a)->alloc(_a, _p, _s, 0, __FILE__, __LINE__)
+#define TC_REALLOC(_a, _p, _prev, _new) (_a)->alloc(_a, _p, _prev, _new, __FILE__, __LINE__)
+
+#define tc_malloc(_s) TC_ALLOC(tc_mem->sys, _s)
+#define tc_calloc(_n, _s) memset(tc_malloc(_s * _n), 0, _s * _n)
+#define tc_free(_p) TC_FREE(tc_mem->sys, _p, 0)
+#define tc_realloc(_p, _s) TC_REALLOC(tc_mem->sys, _p, 0, _s)
 
 typedef struct tc_memory_i {
 
-	tc_allocator_i* system;
+	tc_allocator_i* sys;
 
 	tc_allocator_i* vm;
 
@@ -55,7 +60,7 @@ typedef struct tc_memory_i {
 } tc_memory_i;
 
 
-extern tc_memory_i* tc_memory;
+extern tc_memory_i* tc_mem;
 
 
 /*==========================================================*/
@@ -195,7 +200,7 @@ inline static
 tc_allocator_i* tc_temp_init(tc_temp_t* a, tc_allocator_i* parent) {
 	a->instance = a;
 	a->alloc = temp_realloc;
-	a->parent = parent ? parent : tc_memory->vm;
+	a->parent = parent ? parent : tc_mem->vm;
 	temp_internal_t* temp = (temp_internal_t*)a->buffer;
 	temp->used = sizeof(temp_internal_t);
 	temp->cap = sizeof(a->buffer);
@@ -210,7 +215,7 @@ void* temp_realloc(tc_temp_t* a, void* ptr, size_t old_size, size_t new_size, co
 	if (new_size > old_size) {
 		if (temp->used + new_size > temp->cap) {
 			size_t size = min(CHUNK_SIZE, next_power_of_2((uint32_t)(new_size + sizeof(temp_node_t))));
-			temp_node_t* node = tc_malloc(a->parent, size);
+			temp_node_t* node = TC_ALLOC(a->parent, size);
 			node->size = size;
 			node->next = a->next;
 			a->next = node;
@@ -231,7 +236,7 @@ void tc_temp_free(tc_temp_t* a) {
 	while (node) {
 		temp_node_t* ptr = node;
 		node = node->next;
-		tc_free(a->parent, ptr, ptr->size);
+		TC_FREE(a->parent, ptr, ptr->size);
 	}
 }
 
@@ -257,7 +262,7 @@ typedef struct slab_obj_s {
 
 static inline void* _slab_create(tc_allocator_i* a, uint64_t slab_size, uint64_t obj_size, uint64_t offset)
 {
-    tc_slab_t* sh = tc_malloc(a, slab_size);
+    tc_slab_t* sh = TC_ALLOC(a, slab_size);
     memset(sh, 0, slab_size);
     sh->slab_size = slab_size;
     sh->allocator = a;
@@ -284,13 +289,13 @@ static inline void _slab_destroy(void* slab, uint64_t obj_size, uint64_t offset)
     uint64_t first = (slab_size - sizeof(*sh)) / obj_size;
     uint8_t* last = (uint8_t*)slab + (first - 1) * obj_size;
     uint8_t* iter = (uint8_t*)SLAB_NOTAG(*(uint8_t**)(last + offset));
-    tc_free(a, sh, slab_size);
+    TC_FREE(a, sh, slab_size);
 
     uint64_t n = slab_size / obj_size;
     while (iter) {
         last = iter + (n - 1) * obj_size;
         uint8_t* next = (uint8_t*)SLAB_NOTAG(*(uint8_t**)(last + offset));
-        tc_free(a, iter, slab_size);
+        TC_FREE(a, iter, slab_size);
         iter = next;
     }
 }
@@ -312,7 +317,7 @@ static inline void* _slab_alloc(void* slab, uint64_t obj_size, uint64_t offset)
         next = (void**)(obj + offset);
         // Allocate a new slab if we are at the end
         if (SLAB_IS_NEXT(*next)) {
-            uint8_t* new_slab = (uint8_t*)tc_malloc(sh->allocator, sh->slab_size);
+            uint8_t* new_slab = (uint8_t*)TC_ALLOC(sh->allocator, sh->slab_size);
             *next = SLAB_NEXT(new_slab);
             memset(new_slab, 0, sh->slab_size);
             obj = new_slab;

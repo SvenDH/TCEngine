@@ -24,7 +24,7 @@ typedef struct cell_s {
 } cell_t;
 
 static inline lf_queue_t* lf_queue_init(uint32_t elements, tc_allocator_i* allocator) {
-	lf_queue_t* queue = (lf_queue_t*)tc_malloc(allocator, sizeof(lf_queue_t) + elements * sizeof(cell_t));
+	lf_queue_t* queue = (lf_queue_t*)TC_ALLOC(allocator, sizeof(lf_queue_t) + elements * sizeof(cell_t));
 	queue->base = allocator;
 	queue->buffer = (cell_t*)(queue + 1);
 	queue->mask = elements - 1;
@@ -86,5 +86,5 @@ static inline bool lf_queue_get(lf_queue_t* queue, void** data) {
 }
 
 static inline void lf_queue_destroy(lf_queue_t* queue) {
-	tc_free(queue->base, queue, sizeof(lf_queue_t) + ((queue->mask + 1) * sizeof(cell_t)));
+	TC_FREE(queue->base, queue, sizeof(lf_queue_t) + ((queue->mask + 1) * sizeof(cell_t)));
 }

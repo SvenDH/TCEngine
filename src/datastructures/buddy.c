@@ -183,7 +183,7 @@ tc_allocator_i* tc_buddy_new(tc_allocator_i* a, uint32_t size, uint32_t min_size
 	uint32_t id = tc_os->cpu_id();
 	// We first create a buddy allocator to allocate our free lists and other buddy allocators from
 	// Make sure min size is cache alligned against false sharing
-	uint8_t* data = tc_malloc(a, size);
+	uint8_t* data = TC_ALLOC(a, size);
 	buddy_allocator_t* first_buddy = buddy_create(data, size, max(min_size, MIN_BUDDY_SIZE));
 	uint32_t level = _level_at_size(first_buddy, sizeof(slab_cache_t));
 	slab_cache_t* cache = buddy_alloc_block(first_buddy, level);
@@ -205,7 +205,7 @@ tc_allocator_i* tc_buddy_new(tc_allocator_i* a, uint32_t size, uint32_t min_size
 	// Create other buddy allocators
 	for (uint32_t i = 0; i < cache->num_threads; i++) {
 		if (i != id) {
-			data = tc_malloc(a, size);
+			data = TC_ALLOC(a, size);
 			cache->thread_caches[i].cache = buddy_create(data, size, max(min_size, MIN_BUDDY_SIZE));
 			cache->thread_caches[i].data = data;
 		}
@@ -313,6 +313,6 @@ void tc_buddy_free(tc_allocator_i* a) {
 	TC_ASSERT(n <= MAX_BUDDY_THREADS);
 	memcpy(threads, sc->thread_caches, sizeof(thread_cache_t) * n);
 	for (uint32_t i = 0; i < n; i++) {
-		tc_free(p, threads[i].cache, threads[i].cache->cap);
+		TC_FREE(p, threads[i].cache, threads[i].cache->cap);
 	}
 }

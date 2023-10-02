@@ -215,7 +215,7 @@ static void worker_entry(void* arg) {
 
 fiber_t* tc_fiber() { return worker()->curr_fiber; }
 
-void* tc_scratch_alloc(size_t size) { return tc_malloc(&tc_fiber()->temp, size);}
+void* tc_scratch_alloc(size_t size) { return TC_ALLOC(&tc_fiber()->temp, size);}
 
 void tc_fiber_ready(fiber_t* f)
 {
@@ -252,7 +252,7 @@ void tc_fiber_pool_init(tc_allocator_i* a, uint32_t num_fibers)
 	
 	uint32_t num_cords = tc_os->num_cpus();
 
-	context = tc_malloc(a, sizeof(fiber_context_t));
+	context = TC_ALLOC(a, sizeof(fiber_context_t));
 	memset(context, 0, sizeof(fiber_context_t));
 	context->a = a;
 	
@@ -260,12 +260,12 @@ void tc_fiber_pool_init(tc_allocator_i* a, uint32_t num_fibers)
 	context->job_queue = lf_queue_init(FIBER_NUM_JOBS, a);  // Allocate job queue
 
 	// Create other reusable fibers
-	context->fibers = tc_malloc(a, num_fibers * sizeof(fiber_t*));
+	context->fibers = TC_ALLOC(a, num_fibers * sizeof(fiber_t*));
 	TC_ASSERT(context->fibers);
 	context->num_fibers = num_fibers;
 	lf_lifo_init(&context->free_list);
 	for (int i = 0; i < num_fibers; i++) {
-		context->fibers[i] = tc_malloc(a, FIBER_STACK_SIZE);
+		context->fibers[i] = TC_ALLOC(a, FIBER_STACK_SIZE);
 		TC_ASSERT(((size_t)context->fibers[i] & ~0xffff) == (size_t)context->fibers[i]);
 		memset(context->fibers[i], 0, FIBER_STACK_SIZE);
 		fiber_init(context->fibers[i], i + 1, fiber_loop);
@@ -274,12 +274,12 @@ void tc_fiber_pool_init(tc_allocator_i* a, uint32_t num_fibers)
 	}
 
 	// Initialize main thread
-	worker_t* main_cord = tc_malloc(a, FIBER_STACK_SIZE);
+	worker_t* main_cord = TC_ALLOC(a, FIBER_STACK_SIZE);
 	worker_init(&(struct worker_args) { main_cord, "main_%i", 0 });
 	context->main = main_cord;
 
 	context->num_cords = num_cords;
-	context->workers = tc_malloc(a, num_cords * sizeof(void*));
+	context->workers = TC_ALLOC(a, num_cords * sizeof(void*));
 	context->workers[0] = main_cord;
 
 	// Initialize non-main threads with arguments per thread
@@ -287,7 +287,7 @@ void tc_fiber_pool_init(tc_allocator_i* a, uint32_t num_fibers)
 		TRACE(LOG_ERROR, "[Thread]: Could not create semophore.");
 
 	for (int i = 1; i < num_cords; i++) {
-		worker_t* c = tc_malloc(a, FIBER_STACK_SIZE);
+		worker_t* c = TC_ALLOC(a, FIBER_STACK_SIZE);
 		memset(c, 0, FIBER_STACK_SIZE);
 		context->workers[i] = c;
 		struct worker_args args = (struct worker_args){ c, "worker_%i", i };
@@ -324,8 +324,8 @@ void tc_fiber_pool_destroy(tc_allocator_i* a)
 
 	lf_queue_destroy(context->job_queue);
 
-	tc_free(a, context->workers, context->num_cords * sizeof(void*));
-	tc_free(a, context, sizeof(fiber_context_t));
+	TC_FREE(a, context->workers, context->num_cords * sizeof(void*));
+	TC_FREE(a, context, sizeof(fiber_context_t));
 }
 
 void tc_fiber_yield(lock_t* lk)
@@ -499,7 +499,7 @@ static bool counter_add_to_waiting(tc_fut_t* c, size_t value)
 
 tc_fut_t* tc_fut_new(tc_allocator_i* a, size_t value, tc_waitable_i* waitable, uint32_t num_slots)
 {
-	tc_fut_t* c = tc_malloc(a, sizeof(tc_fut_t) + num_slots * sizeof(fiber_entry));
+	tc_fut_t* c = TC_ALLOC(a, sizeof(tc_fut_t) + num_slots * sizeof(fiber_entry));
 	memset(c, 0, sizeof(tc_fut_t) + num_slots * sizeof(fiber_entry));
 	c->a = a;
 	c->num_slots = num_slots;
@@ -517,7 +517,7 @@ void tc_fut_free(tc_fut_t* c)
 	if (c->waitable && c->waitable->dtor && c->waitable->instance) {
 		c->waitable->dtor(c->waitable->instance);
 	}
-	tc_free(c->a, c, sizeof(tc_fut_t) + c->num_slots * sizeof(fiber_entry));
+	TC_FREE(c->a, c, sizeof(tc_fut_t) + c->num_slots * sizeof(fiber_entry));
 }
 
 size_t tc_fut_incr(tc_fut_t* c)
@@ -558,7 +558,7 @@ int64_t tc_fut_wait_and_free(tc_fut_t* c, size_t value)
 tc_fut_t* tc_run_jobs(jobdecl_t* jobs, uint32_t num_jobs, int64_t* results)
 {
 	// Allocate space for request struct and additional jobs
-	jobrequest_t* req = tc_malloc(
+	jobrequest_t* req = TC_ALLOC(
 		context->a,
 		sizeof(jobrequest_t) + num_jobs * (sizeof(job_t)));
 	req->instance = req;
@@ -582,7 +582,7 @@ tc_fut_t* tc_run_jobs(jobdecl_t* jobs, uint32_t num_jobs, int64_t* results)
 
 static void job_destroy(jobrequest_t* req)
 {
-	tc_free(context->a, req, sizeof(jobrequest_t) + req->num_jobs * (sizeof(job_t)));
+	TC_FREE(context->a, req, sizeof(jobrequest_t) + req->num_jobs * (sizeof(job_t)));
 }
 
 static void job_finish(job_t* job, int64_t result)
@@ -799,7 +799,7 @@ bool tc_chan_try_put(tc_put_t* put_data)
 
 tc_channel_t* tc_chan_new(tc_allocator_i* a, uint32_t num_slots)
 {
-	tc_channel_t* c = tc_malloc(a, sizeof(tc_channel_t) + num_slots * sizeof(void*));
+	tc_channel_t* c = TC_ALLOC(a, sizeof(tc_channel_t) + num_slots * sizeof(void*));
 	memset(c, 0, sizeof(tc_channel_t) + num_slots * sizeof(void*));
 	c->base = a;
 	c->cap = num_slots;
@@ -821,5 +821,5 @@ void tc_chan_close(tc_channel_t* c)
 
 void tc_chan_destroy(tc_channel_t* c)
 {
-	tc_free(c->base, c, sizeof(tc_channel_t) + c->cap * sizeof(void*));
+	TC_FREE(c->base, c, sizeof(tc_channel_t) + c->cap * sizeof(void*));
 }
