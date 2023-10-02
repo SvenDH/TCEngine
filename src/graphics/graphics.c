@@ -2,7 +2,7 @@
 /*							GRAPHICS						*/
 /*==========================================================*/
 #include "private_types.h"
-#include "vkgraphics.h"
+//#include "vkgraphics.h"
 
 // API functions
 add_fence_func add_fence;
@@ -97,7 +97,7 @@ typedef void (*add_buffer)(renderer_t* renderer, const bufferdesc_t* desc, buffe
 typedef void (*remove_buffer)(renderer_t* renderer, buffer_t* buf);
 typedef void (*map_buffer)(renderer_t* renderer, buffer_t* buf, range_t* range);
 typedef void (*unmap_buffer)(renderer_t* renderer, buffer_t* buf);
-typedef void (*cmd_updatebuffer, cmd_t* cmd, buffer_t* buf, uint64_t dstoffset, buffer_t* srcbuf, uint64_t srcoffset, uint64_t size);
+typedef void (*cmd_updatebuffer)(cmd_t* cmd, buffer_t* buf, uint64_t dstoffset, buffer_t* srcbuf, uint64_t srcoffset, uint64_t size);
 typedef void (*cmd_updatesubresource)(cmd_t* cmd, texture_t* tex, buffer_t* srcbuf, const struct subresourcedatadesc_s* desc);
 typedef void (*cmd_copysubresource)(cmd_t* cmd, buffer_t* dstbuf, texture_t* tex, const struct subresourcedatadesc_s* desc);
 typedef void (*add_texture)(renderer_t* renderer, const texturedesc_t* desc, texture_t** tex);
@@ -105,10 +105,11 @@ typedef void (*remove_texture)(renderer_t* renderer, texture_t* tex);
 typedef void (*add_virtualtexture)(cmd_t* cmd, const texturedesc_t* desc, texture_t** tex, void* imagedata);
 typedef void (*remove_virtualtexture)(renderer_t* renderer, virtualtexture_t* tex);
 
+
 static renderertype_t selected_api;
 
 #if defined(VULKAN)
-extern void init_vulkanrenderer(const char* appname, const rendererdesc_t* desc, renderer** renderer);
+extern void init_vulkanrenderer(const char* appname, const rendererdesc_t* desc, renderer_t** renderer);
 extern void init_vulkanraytracingfuncs();
 extern void exit_vulkanrenderer(renderer_t* renderer);
 #endif
@@ -147,9 +148,7 @@ void init_renderer(const char* appname, const rendererdesc_t* desc, renderer_t**
 	TC_ASSERT(renderer && *renderer == NULL);
 	TC_ASSERT(desc);
 
-	// Init requested renderer API
 	init_rendererapi(appname, desc, renderer, selected_api);
-
 	//if (desc->extendedsettings && *renderer)
 	//	setextendedsettings(desc->extendedsettings, (*renderer)->activegpusettings);
 }

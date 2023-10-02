@@ -5,7 +5,18 @@
 #include "core.h"
 #define TinyImageFormat_HAVE_UINTXX_T
 #include <tinyimageformat.h>
-#include <volk.h>
+
+
+#include "private/vkgraphics.h"
+
+
+#if defined(ANDROID) || defined(SWITCH) || defined(TARGET_APPLE_ARM64)
+#define USE_MSAA_RESOLVE_ATTACHMENTS
+#endif
+
+#ifdef TC_DEBUG
+#define ENABLE_DEPENDENCY_TRACKER
+#endif
 
 typedef struct tc_allocator_i tc_allocator_i;
 
@@ -13,7 +24,7 @@ typedef struct buffer_s buffer_t;
 typedef struct texture_s texture_t;
 typedef struct rendertarget_s rendertarget_t;
 typedef struct shader_s shader_t;
-typedef struct descriptoridxmap_s descriptoridxmap_t;
+typedef struct descidxmap_s descidxmap_t;
 typedef struct accelstruct_s accelstruct_t;
 typedef struct queue_s queue_t;
 typedef struct raytracing_s raytracing_t;
@@ -119,27 +130,6 @@ typedef enum {
 	RESOURCE_MEMORY_USAGE_COUNT,
 	RESOURCE_MEMORY_USAGE_MAX_ENUM = 0x7FFFFFFF
 } resourcememoryusage_t;
-
-typedef struct {
-	uint32_t vertex_count;
-	uint32_t instance_count;
-	uint32_t start_vertex;
-	uint32_t start_instance;
-} indirectdrawargs_t;
-
-typedef struct {
-	uint32_t index_count;
-	uint32_t instance_count;
-	uint32_t start_index;
-	uint32_t vertex_offset;
-	uint32_t start_instance;
-} indirectdrawindexargs_t;
-
-typedef struct {
-	uint32_t groupcountX;
-	uint32_t groupcountY;
-	uint32_t groupcountZ;
-} indirectdispatchargs_t;
 
 typedef enum {
 	INDIRECT_ARG_INVALID,
@@ -252,17 +242,18 @@ typedef enum {
 	BLEND_ONE,
 	BLEND_SRC_COLOR,
 	BLEND_INV_SRC_COLOR,
+	BLEND_DST_COLOR,
+	BLEND_INV_DST_COLOR,
 	BLEND_SRC_ALPHA,
 	BLEND_INV_SRC_ALPHA,
 	BLEND_DST_ALPHA,
 	BLEND_INV_DST_ALPHA,
-	BLEND_DST_COLOR,
-	BLEND_INV_DST_COLOR,
 	BLEND_SRC_ALPHA_SATURATE,
 	BLEND_CONSTANT,
 	BLEND_INV_CONSTANT,
 	BLEND_FACTOR_MAX,
 } blendfactor_t;
+
 
 // Blend function to describe how to blend colors of the render target with the output of the fragment shader
 typedef enum { BLEND_ADD, BLEND_SUB, BLEND_REV_SUB, BLEND_MIN, BLEND_MAX, MAX_BLEND_MODES} blendmode_t;
@@ -274,12 +265,12 @@ typedef enum {
 	STENCIL_KEEP,
 	STENCIL_ZERO,
 	STENCIL_REPLACE,
-	STENCIL_INCR,
-	STENDIL_DECR,
+	STENCIL_INVERT,
 	STENCIL_INCR_WRAP,
 	STENCIL_DECR_WRAP,
-	STENCIL_INVERT,
-	STENCIL_FUNC_MAX
+	STENCIL_INCR,
+	STENDIL_DECR,
+	MAX_STENCIL_OPS
 } stencilop_t;
 
 // Which channels can be writtin to
@@ -312,7 +303,7 @@ typedef enum { CULL_MODE_NONE, CULL_MODE_BACK, CULL_MODE_FRONT, CULL_MODE_BOTH, 
 typedef enum { FRONT_FACE_CCW, FRONT_FACE_CW } frontface_t;
 
 // Rasterization fill modes
-typedef enum { FILL_SOLID, FILL_WIRE, FILL_MAX} fillmode_t;
+typedef enum { FILL_SOLID, FILL_WIRE, MAX_FILL_MODES} fillmode_t;
 
 typedef enum { PIPELINE_TYPE_UNDEFINED, PIPELINE_TYPE_COMPUTE, PIPELINE_TYPE_GRAPHICS, PIPELINE_TYPE_RAYTRACING, PIPELINE_TYPE_COUNT } pipelinetype_t;
 
@@ -742,7 +733,7 @@ typedef struct ALIGNED(rootsignature_s, 64) {
 	uint32_t descriptorcount;						// Number of descriptors declared in the root signature layout
 	pipelinetype_t pipelinetype;					// Graphics or Compute
 	descriptorinfo_t* descriptors;					// Array of all descriptors declared in the root signature layout
-	descriptoridxmap_t* descriptormametoindexmap;	// Translates hash of descriptor name to descriptor index in pDescriptors array
+	descidxmap_t* descnametoidxmap;					// Translates hash of descriptor name to descriptor index in pDescriptors array
 	union {
 #if defined(VULKAN)
 		struct {
@@ -1242,7 +1233,7 @@ typedef struct {
 typedef struct {
 	bool canshaderreadfrom[TinyImageFormat_Count];
 	bool canshaderwriteto[TinyImageFormat_Count];
-	bool canrendertargetwriteto[TinyImageFormat_Count];
+	bool canrtwriteto[TinyImageFormat_Count];
 } gpucaps_t;
 
 typedef enum {
@@ -1326,9 +1317,9 @@ typedef struct ALIGNED(renderer_s, 64) {
 			uint32_t multiviewextension : 1;
 			union {
 				struct {
-					uint8_t graphicsqueuefamilyindex;
-					uint8_t transferqueuefamilyindex;
-					uint8_t computequeuefamilyindex;
+					uint8_t graphicsqueuefamilyidx;
+					uint8_t transferqueuefamilyidx;
+					uint8_t computequeuefamilyidx;
 				};
 				uint8_t queuefamilyindices[3];
 			};
@@ -1373,7 +1364,29 @@ typedef struct renderercontext_s {
 	uint32_t gpucount;
 } renderercontext_t;
 
+
 // Indirect command structure define
+typedef struct {
+	uint32_t vertex_count;
+	uint32_t instance_count;
+	uint32_t start_vertex;
+	uint32_t start_instance;
+} indirectdrawargs_t;
+
+typedef struct {
+	uint32_t index_count;
+	uint32_t instance_count;
+	uint32_t start_index;
+	uint32_t vertex_offset;
+	uint32_t start_instance;
+} indirectdrawindexargs_t;
+
+typedef struct {
+	uint32_t groupcountX;
+	uint32_t groupcountY;
+	uint32_t groupcountZ;
+} indirectdispatchargs_t;
+
 typedef struct { indirectargtype_t type; uint32_t offset; } indirectarg_t;
 
 typedef struct {
@@ -1435,7 +1448,6 @@ typedef void (*queue_waitidle_func)(queue_t* queue);
 typedef void (*get_fencestatus_func)(renderer_t* renderer, fence_t* fence, fencestatus_t* status);
 typedef void (*wait_for_fences_func)(renderer_t* renderer, uint32_t count, fence_t** fences);
 typedef void (*toggle_vsync_func)(renderer_t* renderer, swapchain_t** swapchain);
-
 
 typedef void (*add_rendertarget_func)(renderer_t* renderer, const rendertargetdesc_t* desc, rendertarget_t** rt);
 typedef void (*remove_rendertarget_func)(renderer_t* renderer, rendertarget_t* rt);

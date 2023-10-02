@@ -81,6 +81,10 @@ int main(void) {
 	tc_init_registry();
 	tc_fiber_pool_init(a, 1024);
 
+	renderer_t renderer;
+	rendererdesc_t desc = { 0 };
+	init_renderer("TC", &desc, &renderer);
+
 
 	jobdecl_t main_job = { main_fiber, a };
 	tc_fut_t* c = tc_run_jobs(&main_job, 1, NULL);
