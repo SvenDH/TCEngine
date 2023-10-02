@@ -42,6 +42,7 @@ enum {
 	MAX_GPU_VENDOR_STRING_LENGTH = 256,
 	MAX_MULTIPLE_GPUS = 4,
 	MAX_PLANE_COUNT = 3,
+	MAX_LINKED_GPUS = 4,
 	MAX_DESCRIPTOR_POOL_SIZE_ARRAY_COUNT = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT + 1,
 };
 
@@ -308,11 +309,11 @@ typedef enum { FILL_SOLID, FILL_WIRE, MAX_FILL_MODES} fillmode_t;
 typedef enum { PIPELINE_TYPE_UNDEFINED, PIPELINE_TYPE_COMPUTE, PIPELINE_TYPE_GRAPHICS, PIPELINE_TYPE_RAYTRACING, PIPELINE_TYPE_COUNT } pipelinetype_t;
 
 // Texture sampling filter mode:
-typedef enum { FILTER_NEAREST = 0, FILTER_LINEAR, FILTER_MAX } filtermode_t;
+typedef enum { FILTER_NEAREST, FILTER_LINEAR, FILTER_MAX } filtermode_t;
 
-typedef enum { WRAP_CLAMP = 0, WRAP_REPEAT, WRAP_MIRROR, WRAP_BORDER, WRAP_MODE_MAX } addressmode_t;
+typedef enum { WRAP_CLAMP, WRAP_REPEAT, WRAP_MIRROR, WRAP_BORDER, WRAP_MODE_MAX } addressmode_t;
 
-typedef enum { MIPMAP_MODE_NEAREST = 0, MIPMAP_MODE_LINEAR } mipmapmode_t;
+typedef enum { MIPMAP_MODE_NEAREST, MIPMAP_MODE_LINEAR } mipmapmode_t;
 
 typedef union clearvalue_s {
 	struct { float r, g, b, a; };
@@ -386,7 +387,7 @@ typedef enum {
 	TEXTURE_2D_ARRAY,
 	TEXTURE_2DMS_ARRAY,
 	TEXTURE_CUBE_ARRAY,
-	TEXTURE_COUNT,
+	TEXTURE_DIM_COUNT,
 	TEXTURE_UNDEFINED,
 } texturetype_t;
 
@@ -466,8 +467,8 @@ typedef struct {
 	uint32_t ICBmaxcommands;					// ICB max vertex buffers slots count
 	TinyImageFormat format;						// Format of the buffer (applicable to typed storage buffers (Buffer<T>)
 	descriptortype_t descriptors;				// Flags specifying the suitable usage of this buffer (Uniform buffer, Vertex Buffer, Index Buffer,...)
-	uint32_t nodeindex;							// The index of the GPU in SLI/Cross-Fire that owns this buffer, or the Renderer index in unlinked mode.
-	uint32_t sharednodeindexcount;
+	uint32_t nodeidx;							// The index of the GPU in SLI/Cross-Fire that owns this buffer, or the Renderer index in unlinked mode.
+	uint32_t sharednodeidxcount;
 } bufferdesc_t;
 
 typedef struct ALIGNED(buffer_s, 64) {
@@ -484,7 +485,7 @@ typedef struct ALIGNED(buffer_s, 64) {
 	uint64_t size : 32;
 	uint64_t descriptors : 20;
 	uint64_t memusage : 3;
-	uint64_t nodeindex : 4;
+	uint64_t nodeidx : 4;
 } buffer_t;
 TC_COMPILE_ASSERT(sizeof(buffer_t) == 8 * sizeof(uint64_t));	// One cache line
 
@@ -508,8 +509,8 @@ typedef struct {
 	TinyImageFormat format;			// Image format
 	resourcestate_t state;			// What state will the texture get created in
 	descriptortype_t descriptors;	// Descriptor creation
-	uint32_t sharednodeindexcount;	// Number of GPUs to share this texture
-	uint32_t nodeindex;				// GPU which will own this texture
+	uint32_t sharednodeidxcount;	// Number of GPUs to share this texture
+	uint32_t nodeidx;				// GPU which will own this texture
 } texturedesc_t;
 
 // Virtual texture page as a part of the partially resident texture
@@ -577,7 +578,7 @@ typedef struct ALIGNED(texture_s, 64) {
 	uint32_t extraarraysize : 11;
 	uint32_t format : 8;
 	uint32_t aspectmask : 4;		// Flags specifying which aspects (COLOR,DEPTH,STENCIL) are included in the imageView
-	uint32_t nodeindex : 4;
+	uint32_t nodeidx : 4;
 	uint32_t samplecount : 5;
 	uint32_t uav : 1;
 	uint32_t ownsimage : 1;			// This value will be false if the underlying resource is not owned by the texture (swapchain textures,...)
@@ -601,8 +602,8 @@ typedef struct {
 	const void* nativehandle;
 	const char* name;				// Debug name used in gpu profile
 	uint32_t* sharednodeindices;	// GPU indices to share this texture
-	uint32_t sharednodeindexcount;	// Number of GPUs to share this texture
-	uint32_t nodeindex;				// GPU which will own this texture
+	uint32_t sharednodeidxcount;	// Number of GPUs to share this texture
+	uint32_t nodeidx;				// GPU which will own this texture
 } rendertargetdesc_t;
 
 typedef struct ALIGNED(rendertarget_s, 64) {
@@ -791,7 +792,7 @@ typedef struct ALIGNED(descriptorset_s, 64) {
 			uint32_t maxsets;
 			uint8_t dynamicoffsetcount;
 			uint8_t updatefreq;
-			uint8_t nodeindex;
+			uint8_t nodeidx;
 			uint8_t padA;
 		} vulkan;
 #endif
@@ -824,7 +825,7 @@ typedef struct ALIGNED(cmd_s, 64) {
 			VkRenderPass activerenderpass;
 			VkPipelineLayout boundpipelinelayout;
 			cmdpool_t* cmdpool;
-			uint32_t nodeindex : 4;
+			uint32_t nodeidx : 4;
 			uint32_t type : 3;
 		} vulkan;
 #endif
@@ -857,7 +858,7 @@ typedef struct {
 		struct
 		{
 			VkSemaphore semaphore;
-			uint32_t currentnodeindex : 5;
+			uint32_t currentnodeidx : 5;
 			uint32_t signaled : 1;
 			uint32_t padA;
 			uint64_t padB;
@@ -871,7 +872,7 @@ typedef struct {
 	queuetype_t type;
 	queueflag_t flag;
 	queuepriority_t priority;
-	uint32_t nodeindex;
+	uint32_t nodeidx;
 } queuedesc_t;
 
 typedef struct queue_s {
@@ -891,7 +892,7 @@ typedef struct queue_s {
 #endif
 	};
 	uint32_t type : 3;
-	uint32_t nodeindex : 4;
+	uint32_t nodeidx : 4;
 } queue_t;
 
 
@@ -1007,7 +1008,7 @@ typedef struct {
 	blendmode_t blendmodes[MAX_RENDER_TARGET_ATTACHMENTS];			// Blend mode per render target.
 	blendmode_t blendalphamodes[MAX_RENDER_TARGET_ATTACHMENTS];		// Alpha blend mode per render target.
 	int32_t masks[MAX_RENDER_TARGET_ATTACHMENTS];					// Write mask per render target.
-	blendstatetargets_t rendertargetmask;							// Mask that identifies the render targets affected by the blend state.
+	blendstatetargets_t rtmask;										// Mask that identifies the render targets affected by the blend state.
 	bool alphatocoverage;											// Set whether alpha to coverage should be enabled.
 	bool independentblend;											// Set whether each render target has an unique blend function. When false the blend function in slot 0 will be used for all render targets.
 } blendstatedesc_t;
@@ -1408,7 +1409,7 @@ typedef struct {
 	rootsignature_t* rootsignature;
 	descriptorupdatefreq_t updatefreq;
 	uint32_t maxsets;
-	uint32_t nodeindex;
+	uint32_t nodeidx;
 } descriptorsetdesc_t;
 
 typedef struct {
@@ -1474,8 +1475,8 @@ typedef void (*update_descriptorset_func)(renderer_t* renderer, uint32_t index, 
 // Command buffer functions
 typedef void (*add_cmdpool_func)(renderer_t* renderer, const cmdpooldesc_t* desc, cmdpool_t** pool);
 typedef void (*remove_cmdpool_func)(renderer_t* renderer, cmdpool_t* pool);
-typedef void (*add_cmds_func)(renderer_t* renderer, const cmddesc_t* desc, uint32_t count, cmd_t*** cmds);
-typedef void (*remove_cmds_func)(renderer_t* renderer, uint32_t count, cmd_t** cmds);
+typedef void (*add_cmds_func)(renderer_t* renderer, const cmddesc_t* desc, uint32_t count, cmd_t** cmds);
+typedef void (*remove_cmds_func)(renderer_t* renderer, uint32_t count, cmd_t* cmds);
 typedef void (*reset_cmdpool_func)(renderer_t* renderer, cmdpool_t* pool);
 
 typedef void (*cmd_begin_func)(cmd_t* cmd);

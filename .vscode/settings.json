@@ -47,6 +47,7 @@
         "xlocmon": "c",
         "xloctime": "c",
         "xutility": "c",
-        "vk_mem_alloc.h": "c"
+        "vk_mem_alloc.h": "c",
+        "iosfwd": "c"
     }
 }
