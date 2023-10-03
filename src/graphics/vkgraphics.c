@@ -2113,9 +2113,8 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 	funcs.vkInvalidateMappedMemoryRanges = vkInvalidateMappedMemoryRanges;
 	funcs.vkCmdCopyBuffer = vkCmdCopyBuffer;
 #if VMA_BIND_MEMORY2 || VMA_VULKAN_VERSION >= 1001000
-	/// Fetch "vkBindBufferMemory2" on Vulkan >= 1.1, fetch "vkBindBufferMemory2KHR" when using VK_KHR_bind_memory2 extension.
 	funcs.vkBindBufferMemory2KHR = vkBindBufferMemory2KHR;
-	/// Fetch "vkBindImageMemory2" on Vulkan >= 1.1, fetch "vkBindImageMemory2KHR" when using VK_KHR_bind_memory2 extension.
+	
 	funcs.vkBindImageMemory2KHR = vkBindImageMemory2KHR;
 #endif
 #if VMA_MEMORY_BUDGET || VMA_VULKAN_VERSION >= 1001000
@@ -2126,12 +2125,9 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 #endif
 #endif
 #if VMA_VULKAN_VERSION >= 1003000
-	/// Fetch from "vkGetDeviceBufferMemoryRequirements" on Vulkan >= 1.3, but you can also fetch it from "vkGetDeviceBufferMemoryRequirementsKHR" if you enabled extension VK_KHR_maintenance4.
 	funcs.vkGetDeviceBufferMemoryRequirements = vkGetDeviceBufferMemoryRequirements;
-	/// Fetch from "vkGetDeviceImageMemoryRequirements" on Vulkan >= 1.3, but you can also fetch it from "vkGetDeviceImageMemoryRequirementsKHR" if you enabled extension VK_KHR_maintenance4.
 	funcs.vkGetDeviceImageMemoryRequirements = vkGetDeviceImageMemoryRequirements;
 #endif
-
 	info.pVulkanFunctions = &funcs;
 	info.pAllocationCallbacks = &alloccbs;
 	vmaCreateAllocator(&info, &renderer->vulkan.vmaAllocator);
@@ -2140,277 +2136,129 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 	// We still need to bind empty descriptor set here to keep some drivers happy
 	VkDescriptorPoolSize descriptorPoolSizes[1] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1 } };
 	add_descriptor_pool(renderer, 1, 0, descriptorPoolSizes, 1, &renderer->vulkan.emptydescriptorpool);
-	VkDescriptorSetLayoutCreateInfo layoutCreateInfo = { 0 };
+	VkDescriptorSetLayoutCreateInfo info3 = { 0 };
 	VkDescriptorSet* emptySets[] = { &renderer->vulkan.emptydescriptorset };
-	layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	CHECK_VKRESULT(vkCreateDescriptorSetLayout(renderer->vulkan.device, &layoutCreateInfo, &alloccbs, &renderer->vulkan.pEmptyDescriptorSetLayout));
+	info3.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	CHECK_VKRESULT(vkCreateDescriptorSetLayout(renderer->vulkan.device, &info3, &alloccbs, &renderer->vulkan.emptydescriptorsetlayout));
 	consume_descriptor_sets(renderer->vulkan.device, renderer->vulkan.emptydescriptorpool, &renderer->vulkan.emptydescriptorsetlayout, 1, emptySets);
 
-	spin_lock_init(&gRenderPasslock_t[renderer->mUnlinkedRendererIndex]);
-	gRenderPassMap[renderer->mUnlinkedRendererIndex] = NULL;
-	hmdefault(gRenderPassMap[renderer->mUnlinkedRendererIndex], NULL);
-	gFrameBufferMap[renderer->mUnlinkedRendererIndex] = NULL;
-	hmdefault(gFrameBufferMap[renderer->mUnlinkedRendererIndex], NULL);
-
 	VkPhysicalDeviceFeatures2KHR gpufeats = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR };
-#ifdef NX64
-	vkGetPhysicalDeviceFeatures2(renderer->vulkan.activegpu, &gpufeats);
-#else
 	vkGetPhysicalDeviceFeatures2KHR(renderer->vulkan.activegpu, &gpufeats);
-#endif
-	
-	renderer->vulkan.mShaderSampledImageArrayDynamicIndexingSupported = (uint32_t)(gpufeats.features.shaderSampledImageArrayDynamicIndexing);
-	if (renderer->vulkan.mShaderSampledImageArrayDynamicIndexingSupported)
-	{
+	renderer->vulkan.shadersampledimagearraydynamicindexingsupported = (uint32_t)(gpufeats.features.shaderSampledImageArrayDynamicIndexing);
+	if (renderer->vulkan.shadersampledimagearraydynamicindexingsupported)
 		TRACE(LOG_INFO, "GPU supports texture array dynamic indexing");
-	}
 
-	util_find_queue_family_index(renderer, 0, QUEUE_TYPE_GRAPHICS, NULL, &renderer->vulkan.mGraphicsQueueFamilyIndex, NULL);
-	util_find_queue_family_index(renderer, 0, QUEUE_TYPE_COMPUTE, NULL, &renderer->vulkan.mComputeQueueFamilyIndex, NULL);
-	util_find_queue_family_index(renderer, 0, QUEUE_TYPE_TRANSFER, NULL, &renderer->vulkan.mTransferQueueFamilyIndex, NULL);
-
+	util_find_queue_family_index(renderer, 0, QUEUE_TYPE_GRAPHICS, NULL, &renderer->vulkan.graphicsqueuefamilyidx, NULL);
+	util_find_queue_family_index(renderer, 0, QUEUE_TYPE_COMPUTE, NULL, &renderer->vulkan.computequeuefamilyidx, NULL);
+	util_find_queue_family_index(renderer, 0, QUEUE_TYPE_TRANSFER, NULL, &renderer->vulkan.transferqueuefamilyidx, NULL);
 	add_default_resources(renderer);
-
-#if defined(QUEST_VR)
-    if (!hook_post_init_renderer(renderer->vulkan.instance,
-        renderer->vulkan.activegpu,
-        renderer->vulkan.device))
-    {
-        vmaDestroyAllocator(renderer->vulkan.pVmaAllocator);
-        tc_free(renderer->pName);
-#if !defined(VK_USE_DISPATCH_TABLES)
-        RemoveDevice(renderer);
-		if (desc->gpumode != GPU_MODE_UNLINKED)
-			exitCommon(renderer);
-        tc_free(renderer);
-        TRACE(LOG_ERROR, "Failed to initialize VrApi Vulkan systems.");
-#endif
-        *prenderer = NULL;
-        return;
-    }
-#endif
-
 	++renderer_count;
-	TC_ASSERT(gRendererCount <= MAX_UNLINKED_GPUS);
-
-	// Renderer is good!
-	*prenderer = renderer;
+	TC_ASSERT(renderer_count <= MAX_UNLINKED_GPUS);
+	*rendererptr = renderer;
 }
 
-void vk_exitRenderer(renderer_t* renderer)
+void vk_exit_renderer(renderer_t* renderer)
 {
 	TC_ASSERT(renderer);
-	--gRendererCount;
-
+	--renderer_count;
 	remove_default_resources(renderer);
+	vmaDestroyAllocator(renderer->vulkan.vmaAllocator);
+	remove_device(renderer);
+	if (renderer->vulkan.owninstance)
+		exit_common(renderer);
 
-	// Remove the renderpasses
-	for (ptrdiff_t i = 0; i < hmlen(gRenderPassMap[renderer->mUnlinkedRendererIndex]); ++i)
-	{
-		RenderPassNode** pMap = gRenderPassMap[renderer->mUnlinkedRendererIndex][i].value;
-		RenderPassNode* map = *pMap;
-		for (ptrdiff_t j = 0; j < hmlen(map); ++j)
-			remove_render_pass(renderer, &map[j].value);
-		hmfree(map);
-		tc_free(pMap);
-	}
-	hmfree(gRenderPassMap[renderer->mUnlinkedRendererIndex]);
-
-	for (ptrdiff_t i = 0; i < hmlen(gFrameBufferMap[renderer->mUnlinkedRendererIndex]); ++i)
-	{
-		FrameBufferNode** pMap = gFrameBufferMap[renderer->mUnlinkedRendererIndex][i].value;
-		FrameBufferNode* map = *pMap;
-		for (ptrdiff_t j = 0; j < hmlen(map); ++j)
-			remove_framebuffer(renderer, &map[j].value);
-		hmfree(map);
-		tc_free(pMap);
-	}
-	hmfree(gFrameBufferMap[renderer->mUnlinkedRendererIndex]);
-
-#if defined(QUEST_VR)
-    hook_pre_remove_renderer();
-#endif
-
-	// Destroy the Vulkan bits
-	vmaDestroyAllocator(renderer->vulkan.pVmaAllocator);
-
-#if defined(VK_USE_DISPATCH_TABLES)
-#else
-	RemoveDevice(renderer);
-#endif
-	if (renderer->vulkan.mOwnInstance)
-		exitCommon(renderer);
-
-	destroylock_t(&gRenderPasslock_t[renderer->mUnlinkedRendererIndex]);
-
-	tc_free(gRenderPassMap[renderer->mUnlinkedRendererIndex]);
-	tc_free(gFrameBufferMap[renderer->mUnlinkedRendererIndex]);
-
-	for (uint32_t i = 0; i < renderer->linkednodecount; ++i)
-	{
-		tc_free(renderer->vulkan.pAvailableQueueCount[i]);
+	for (uint32_t i = 0; i < renderer->linkednodecount; i++) {
+		tc_free(renderer->vulkan.availablequeues[i]);
 		tc_free(renderer->vulkan.usedqueues[i]);
 	}
-
-	// Free all the renderer components!
-	tc_free(renderer->vulkan.pAvailableQueueCount);
+	tc_free(renderer->vulkan.availablequeues);
 	tc_free(renderer->vulkan.usedqueues);
-	tc_free(renderer->pCapBits);
-	tc_free(renderer->pName);
+	tc_free(renderer->capbits);
+	tc_free(renderer->name);
 	tc_free(renderer);
 }
-/************************************************************************/
-// Resource Creation Functions
-/************************************************************************/
-void vk_add_fence(renderer_t* renderer, fence_t** ppFence)
+
+void vk_add_fence(renderer_t* renderer, fence_t* fence)
 {
-	TC_ASSERT(renderer);
-	TC_ASSERT(ppFence);
+	TC_ASSERT(renderer && fence);
 	TC_ASSERT(VK_NULL_HANDLE != renderer->vulkan.device);
-
-	fence_t* pFence = (fence_t*)tc_calloc(1, sizeof(Fence));
-	TC_ASSERT(pFence);
-
-	DECLARE_ZERO(VkFenceCreateInfo, info);
+	memset(fence, 0, sizeof(fence_t));
+	VkFenceCreateInfo info = { 0 };
 	info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	info.pNext = NULL;
-	info.flags = 0;
-	CHECK_VKRESULT(vkCreateFence(renderer->vulkan.device, &info, &alloccbs, &pFence->vulkan.pVkFence));
-
-	pFence->vulkan.mSubmitted = false;
-
-	*ppFence = pFence;
+	CHECK_VKRESULT(vkCreateFence(renderer->vulkan.device, &info, &alloccbs, &fence->vulkan.fence));
+	fence->vulkan.submitted = false;
 }
 
-void vk_remove_fence(renderer_t* renderer, fence_t* pFence)
+void vk_remove_fence(renderer_t* renderer, fence_t* fence)
 {
-	TC_ASSERT(renderer);
-	TC_ASSERT(pFence);
+	TC_ASSERT(renderer && fence);
 	TC_ASSERT(VK_NULL_HANDLE != renderer->vulkan.device);
-	TC_ASSERT(VK_NULL_HANDLE != pFence->vulkan.pVkFence);
-
-	vkDestroyFence(renderer->vulkan.device, pFence->vulkan.pVkFence, &alloccbs);
-
-	tc_free(pFence);
+	TC_ASSERT(VK_NULL_HANDLE != fence->vulkan.fence);
+	vkDestroyFence(renderer->vulkan.device, fence->vulkan.fence, &alloccbs);
 }
 
-void vk_add_semaphore(renderer_t* renderer, Semaphore** ppSemaphore)
+void vk_add_semaphore(renderer_t* renderer, semaphore_t* semaphore)
 {
-	TC_ASSERT(renderer);
-	TC_ASSERT(ppSemaphore);
+	TC_ASSERT(renderer && semaphore);
 	TC_ASSERT(VK_NULL_HANDLE != renderer->vulkan.device);
-
-	Semaphore* pSemaphore = (Semaphore*)tc_calloc(1, sizeof(Semaphore));
-	TC_ASSERT(pSemaphore);
-
-	DECLARE_ZERO(VkSemaphoreCreateInfo, info);
+	VkSemaphoreCreateInfo info = { 0 };
 	info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	info.pNext = NULL;
-	info.flags = 0;
-	CHECK_VKRESULT(
-		vkCreateSemaphore(renderer->vulkan.device, &info, &alloccbs, &(pSemaphore->vulkan.pVkSemaphore)));
-	// Set signal initial state.
-	pSemaphore->vulkan.mSignaled = false;
-
-	*ppSemaphore = pSemaphore;
+	CHECK_VKRESULT(vkCreateSemaphore(renderer->vulkan.device, &info, &alloccbs, &(semaphore->vulkan.semaphore)));
+	semaphore->vulkan.signaled = false;	// Set signal initial state.
 }
 
-void vk_remove_semaphore(renderer_t* renderer, Semaphore* pSemaphore)
+void vk_remove_semaphore(renderer_t* renderer, semaphore_t* semaphore)
 {
-	TC_ASSERT(renderer);
-	TC_ASSERT(pSemaphore);
+	TC_ASSERT(renderer && semaphore);
 	TC_ASSERT(VK_NULL_HANDLE != renderer->vulkan.device);
-	TC_ASSERT(VK_NULL_HANDLE != pSemaphore->vulkan.pVkSemaphore);
-
-	vkDestroySemaphore(renderer->vulkan.device, pSemaphore->vulkan.pVkSemaphore, &alloccbs);
-
-	tc_free(pSemaphore);
+	TC_ASSERT(VK_NULL_HANDLE != semaphore->vulkan.semaphore);
+	vkDestroySemaphore(renderer->vulkan.device, semaphore->vulkan.semaphore, &alloccbs);
 }
 
-void vk_add_queue(renderer_t* renderer, queuedesc_t* desc, queue_t** ppQueue)
+void vk_add_queue(renderer_t* renderer, queuedesc_t* desc, queue_t* queue)
 {
-	TC_ASSERT(desc != NULL);
-
-	const uint32_t          nodeidx = (renderer->gpumode == GPU_MODE_LINKED) ? desc->mNodeIndex : 0;
-	VkQueueFamilyProperties queueProps = { 0 };
-	uint8_t                 queueFamilyIndex = UINT8_MAX;
-	uint8_t                 queueidx = UINT8_MAX;
-
-	util_find_queue_family_index(renderer, nodeidx, desc->mType, &queueProps, &queueFamilyIndex, &queueidx);
-	++renderer->vulkan.usedqueues[nodeidx][queueProps.queueFlags];
-
-	queue_t* pQueue = (queue_t*)tc_calloc(1, sizeof(Queue));
-	TC_ASSERT(pQueue);
-
-	pQueue->vulkan.mVkQueueFamilyIndex = queueFamilyIndex;
-	pQueue->mNodeIndex = desc->mNodeIndex;
-	pQueue->mType = desc->mType;
-	pQueue->vulkan.mVkqueueidx = queueidx;
-	pQueue->vulkan.gpumode = renderer->gpumode;
-	pQueue->vulkan.mTimestampPeriod = renderer->vulkan.activegpuprops->properties.limits.timestampPeriod;
-	pQueue->vulkan.mFlags = queueProps.queueFlags;
-	pQueue->vulkan.pSubmitlock_t = &renderer->nulldescriptors->mSubmitlock_t;
-
-	// override node index
+	TC_ASSERT(renderer && desc && queue);
+	const uint32_t nodeidx = (renderer->gpumode == GPU_MODE_LINKED) ? desc->nodeidx : 0;
+	VkQueueFamilyProperties props = { 0 };
+	uint8_t famidx = UINT8_MAX;
+	uint8_t queueidx = UINT8_MAX;
+	util_find_queue_family_index(renderer, nodeidx, desc->type, &props, &famidx, &queueidx);
+	++renderer->vulkan.usedqueues[nodeidx][props.queueFlags];
+	memset(queue, 0, sizeof(queue_t));
+	queue->vulkan.queuefamilyindex = famidx;
+	queue->nodeidx = desc->nodeidx;
+	queue->type = desc->type;
+	queue->vulkan.queueindex = queueidx;
+	queue->vulkan.gpumode = renderer->gpumode;
+	queue->vulkan.timestampperiod = renderer->vulkan.activegpuprops->properties.limits.timestampPeriod;
+	queue->vulkan.flags = props.queueFlags;
+	queue->vulkan.submitlck = &renderer->nulldescriptors->submitlck;
 	if (renderer->gpumode == GPU_MODE_UNLINKED)
-		pQueue->mNodeIndex = renderer->mUnlinkedRendererIndex;
-
-	// Get queue handle
-	vkGetDeviceQueue(
-		renderer->vulkan.device, pQueue->vulkan.mVkQueueFamilyIndex, pQueue->vulkan.mVkqueueidx, &pQueue->vulkan.pVkQueue);
-	TC_ASSERT(VK_NULL_HANDLE != pQueue->vulkan.pVkQueue);
-
-	*ppQueue = pQueue;
-
-#if defined(QUEST_VR)
-    extern queue_t* pSynchronisationQueue;
-    if(desc->mType == QUEUE_TYPE_GRAPHICS)
-        pSynchronisationQueue = pQueue;
-#endif
+		queue->nodeidx = renderer->unlinkedrendererindex;
+	
+	vkGetDeviceQueue(renderer->vulkan.device, queue->vulkan.queuefamilyindex, queue->vulkan.queuefamilyindex, &queue->vulkan.queue);
+	TC_ASSERT(VK_NULL_HANDLE != queue->vulkan.queue);
 }
 
-void vk_remove_queue(renderer_t* renderer, queue_t* pQueue)
+void vk_remove_queue(renderer_t* renderer, queue_t* queue)
 {
-#if defined(QUEST_VR)
-    extern queue_t* pSynchronisationQueue;
-    if (pQueue == pSynchronisationQueue)
-        pSynchronisationQueue = NULL;
-#endif
-
-	TC_ASSERT(renderer);
-	TC_ASSERT(pQueue);
-
-	const uint32_t     nodeidx = renderer->gpumode == GPU_MODE_LINKED ? pQueue->mNodeIndex : 0;
-	const VkQueueFlags queueFlags = pQueue->vulkan.mFlags;
-	--renderer->vulkan.usedqueues[nodeidx][queueFlags];
-
-	tc_free(pQueue);
+	TC_ASSERT(renderer && queue);
+	const uint32_t nodeidx = renderer->gpumode == GPU_MODE_LINKED ? queue->nodeidx : 0;
+	const VkQueueFlags flags = queue->vulkan.flags;
+	--renderer->vulkan.usedqueues[nodeidx][flags];
 }
 
-void vk_add_cmdpool(renderer_t* renderer, const cmdpooldesc_t* desc, cmdpool_t** ppCmdPool)
+void vk_add_cmdpool(renderer_t* renderer, const cmdpooldesc_t* desc, cmdpool_t* pool)
 {
 	TC_ASSERT(renderer);
 	TC_ASSERT(VK_NULL_HANDLE != renderer->vulkan.device);
-	TC_ASSERT(ppCmdPool);
-
-	cmdpool_t* pCmdPool = (cmdpool_t*)tc_calloc(1, sizeof(CmdPool));
-	TC_ASSERT(pCmdPool);
-
-	pCmdPool->pQueue = desc->pQueue;
-
-	DECLARE_ZERO(VkCommandPoolCreateInfo, info);
+	TC_ASSERT(pool);
+	pool->queue = desc->queue;
+	VkCommandPoolCreateInfo info = { 0 };
 	info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	info.pNext = NULL;
-	info.flags = 0;
-	info.queueFamilyIndex = desc->pQueue->vulkan.mVkQueueFamilyIndex;
-	if (desc->mTransient)
-	{
-		info.flags |= VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-	}
-
-	CHECK_VKRESULT(vkCreateCommandPool(renderer->vulkan.device, &info, &alloccbs, &(pCmdPool->pVkCmdPool)));
-
-	*ppCmdPool = pCmdPool;
+	info.queueFamilyIndex = desc->queue->vulkan.queuefamilyindex;
+	if (desc->transient) info.flags |= VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+	CHECK_VKRESULT(vkCreateCommandPool(renderer->vulkan.device, &info, &alloccbs, &(pool->cmdpool)));
 }
 
 void vk_remove_cmdpool(renderer_t* renderer, cmdpool_t* pool)
@@ -2418,26 +2266,11 @@ void vk_remove_cmdpool(renderer_t* renderer, cmdpool_t* pool)
 	TC_ASSERT(renderer);
 	TC_ASSERT(pool);
 	TC_ASSERT(VK_NULL_HANDLE != renderer->vulkan.device);
-	TC_ASSERT(VK_NULL_HANDLE != pCmdPool->pVkCmdPool);
-
+	TC_ASSERT(VK_NULL_HANDLE != pool->cmdpool);
 	vkDestroyCommandPool(renderer->vulkan.device, pool->cmdpool, &alloccbs);
-
-	tc_free(pool);
 }
 
-void vk_remove_cmd(renderer_t* renderer, cmd_t* pCmd)
-{
-	TC_ASSERT(renderer);
-	TC_ASSERT(pCmd);
-	TC_ASSERT(VK_NULL_HANDLE != pCmd->renderer->vulkan.device);
-	TC_ASSERT(VK_NULL_HANDLE != pCmd->vulkan.pVkCmdBuf);
-
-	vkFreeCommandBuffers(renderer->vulkan.device, pCmd->vulkan.pCmdPool->pVkCmdPool, 1, &(pCmd->vulkan.pVkCmdBuf));
-
-	tc_free(pCmd);
-}
-
-void vk_add_cmds(renderer_t* renderer, const cmddesc_t* desc, uint32_t count, cmd_t** cmds)
+void vk_add_cmds(renderer_t* renderer, const cmddesc_t* desc, uint32_t count, cmd_t* cmds)
 {
 	TC_ASSERT(renderer && desc);
 	TC_ASSERT(count);
@@ -2447,303 +2280,176 @@ void vk_add_cmds(renderer_t* renderer, const cmddesc_t* desc, uint32_t count, cm
 	info.pNext = NULL;
 	info.commandBufferCount = 1;
 	for (uint32_t i = 0; i < count; ++i) {
-		cmd_t* cmd = (cmd_t*)tc_calloc_memalign(1, alignof(cmd_t), sizeof(cmd_t));
+		cmd_t* cmd = &cmds[i];
 		cmd->renderer = renderer;
 		cmd->queue = desc->pool->queue;
-		cmd->vulkan.pool = desc->pool;
+		cmd->vulkan.cmdpool = desc->pool;
 		cmd->vulkan.type = desc->pool->queue->type;
 		cmd->vulkan.nodeidx = desc->pool->queue->nodeidx;
 		info.commandPool = desc->pool->cmdpool;
 		info.level = desc->secondary ? VK_COMMAND_BUFFER_LEVEL_SECONDARY : VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 		CHECK_VKRESULT(vkAllocateCommandBuffers(renderer->vulkan.device, &info, &(cmd->vulkan.cmdbuf)));
-
-		cmds[i] = cmd;
 	}
 }
 
 void vk_remove_cmds(renderer_t* renderer, uint32_t count, cmd_t* cmds)
 {
-	//verify that given command list is valid
 	TC_ASSERT(renderer && cmds);
 	for (uint32_t i = 0; i < count; ++i) {
-		TC_ASSERT(cmds[i]);
 		TC_ASSERT(VK_NULL_HANDLE != cmds[i].renderer->vulkan.device);
 		TC_ASSERT(VK_NULL_HANDLE != cmds[i].vulkan.cmdbuf);
 		vkFreeCommandBuffers(renderer->vulkan.device, cmds[i].vulkan.cmdpool->cmdpool, 1, &(cmds[i].vulkan.cmdbuf));
-
-		tc_free(cmds[i]);
 	}
 }
 
-void vk_toggleVSync(renderer_t* renderer, SwapChain** ppSwapChain)
+void vk_toggle_vsync(renderer_t* renderer, swapchain_t** swapchain)
 {
-	SwapChain* pSwapChain = *ppSwapChain;
-
-	Queue queue = { 0 };
-	queue.vulkan.mVkQueueFamilyIndex = pSwapChain->vulkan.mPresentQueueFamilyIndex;
+	queue_t queue = { 0 };
+	queue.vulkan.queuefamilyindex = swapchain->vulkan.presentqueuefamilyindex;
 	queue_t* queues[] = { &queue };
 
-	SwapChainDesc desc = *pSwapChain->vulkan.desc;
-	desc.mEnableVsync = !desc.mEnableVsync;
-	desc.mPresentQueueCount = 1;
-	desc.ppPresentQueues = queues;
-	//toggle vsync on or off
-	//for Vulkan we need to remove the SwapChain and recreate it with correct vsync option
-	removeSwapChain(renderer, pSwapChain);
-	addSwapChain(renderer, &desc, ppSwapChain);
+	swapchaindesc_t desc = *swapchain->vulkan.desc;
+	desc.vsync = !desc.vsync;	//toggle vsync on or off
+	desc.presentqueuecount = 1;
+	desc.presentqueues = queues;
+	remove_swapchain(renderer, swapchain);
+	add_swapchain(renderer, &desc, swapchain);
 }
 
-void vk_addSwapChain(renderer_t* renderer, const SwapChainDesc* desc, SwapChain** ppSwapChain)
+void vk_add_swapchain(renderer_t* renderer, const swapchaindesc_t* desc, swapchain_t** swapchain)
 {
-	TC_ASSERT(renderer);
-	TC_ASSERT(desc);
-	TC_ASSERT(ppSwapChain);
-	TC_ASSERT(desc->mImageCount <= MAX_SWAPCHAIN_IMAGES);
-
-#if defined(QUEST_VR)
-    hook_add_swap_chain(renderer, desc, ppSwapChain);
-    return;
-#endif
-
-	/************************************************************************/
-	// Create surface
-	/************************************************************************/
+	TC_ASSERT(renderer && desc && swapchain);
+	TC_ASSERT(desc->imagecount <= MAX_SWAPCHAIN_IMAGES);
 	TC_ASSERT(VK_NULL_HANDLE != renderer->vulkan.instance);
-	VkSurfaceKHR vkSurface;
-	// Create a WSI surface for the window:
-#if defined(VK_USE_PLATFORM_WIN32_KHR)
-	DECLARE_ZERO(VkWin32SurfaceCreateInfoKHR, info);
-	info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-	info.pNext = NULL;
-	info.flags = 0;
-	info.hinstance = ::GetModuleHandle(NULL);
-	info.hwnd = (HWND)desc->mWindowHandle.window;
-	CHECK_VKRESULT(vkCreateWin32SurfaceKHR(renderer->vulkan.instance, &info, &alloccbs, &vkSurface));
-#elif defined(VK_USE_PLATFORM_XLIB_KHR)
-	DECLARE_ZERO(VkXlibSurfaceCreateInfoKHR, info);
-	info.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-	info.pNext = NULL;
-	info.flags = 0;
-	info.dpy = desc->mWindowHandle.display;      //TODO
-	info.window = desc->mWindowHandle.window;    //TODO
-	CHECK_VKRESULT(vkCreateXlibSurfaceKHR(renderer->vulkan.instance, &info, &alloccbs, &vkSurface));
-#elif defined(VK_USE_PLATFORM_XCB_KHR)
-	DECLARE_ZERO(VkXcbSurfaceCreateInfoKHR, info);
-	info.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
-	info.pNext = NULL;
-	info.flags = 0;
-	info.connection = desc->mWindowHandle.connection;    //TODO
-	info.window = desc->mWindowHandle.window;            //TODO
-	CHECK_VKRESULT(vkCreateXcbSurfaceKHR(renderer->pVkInstance, &info, &alloccbs, &vkSurface));
-#elif defined(VK_USE_PLATFORM_IOS_MVK)
-	// Add IOS support here
-#elif defined(VK_USE_PLATFORM_MACOS_MVK)
-	// Add MacOS support here
-#elif defined(VK_USE_PLATFORM_ANDROID_KHR)
-	DECLARE_ZERO(VkAndroidSurfaceCreateInfoKHR, info);
-	info.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
-	info.pNext = NULL;
-	info.flags = 0;
-	info.window = desc->mWindowHandle.window;
-	CHECK_VKRESULT(vkCreateAndroidSurfaceKHR(renderer->vulkan.instance, &info, &alloccbs, &vkSurface));
-#elif defined(VK_USE_PLATFORM_GGP)
-	extern VkResult ggpCreateSurface(VkInstance, VkSurfaceKHR * surface);
-	CHECK_VKRESULT(ggpCreateSurface(renderer->pVkInstance, &vkSurface));
-#elif defined(VK_USE_PLATFORM_VI_NN)
-	extern VkResult nxCreateSurface(VkInstance, VkSurfaceKHR * surface);
-	CHECK_VKRESULT(nxCreateSurface(renderer->vulkan.instance, &vkSurface));
-#else
-#error PLATFORM NOT SUPPORTED
-#endif
-	/************************************************************************/
-	// Create swap chain
-	/************************************************************************/
 	TC_ASSERT(VK_NULL_HANDLE != renderer->vulkan.activegpu);
-
-	// Image count
-	if (0 == desc->mImageCount)
-	{
-		((SwapChainDesc*)desc)->mImageCount = 2;
+	VkSurfaceKHR surface;
+	VkResult err = glfwCreateWindowSurface(renderer->vulkan.instance, desc->window, &alloccbs, &surface);
+	if (err) {
+		TRACE(LOG_ERROR, "Failed to create a window surface");
+		TC_ASSERT(0);
 	}
-
-	DECLARE_ZERO(VkSurfaceCapabilitiesKHR, caps);
-	CHECK_VKRESULT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(renderer->vulkan.activegpu, vkSurface, &caps));
-
-	if ((caps.maxImageCount > 0) && (desc->mImageCount > caps.maxImageCount))
-	{
-		LOGF(
-			LogLevel::eWARNING, "Changed requested SwapChain images {%u} to maximum allowed SwapChain images {%u}", desc->mImageCount,
-			caps.maxImageCount);
-		((SwapChainDesc*)desc)->mImageCount = caps.maxImageCount;
+	if (0 == desc->imagecount) ((swapchaindesc_t*)desc)->imagecount = 2;
+	VkSurfaceCapabilitiesKHR caps = { 0 };
+	CHECK_VKRESULT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(renderer->vulkan.activegpu, surface, &caps));
+	if ((caps.maxImageCount > 0) && (desc->imagecount > caps.maxImageCount)) {
+		TRACE(LOG_WARNING, "Changed requested SwapChain images {%u} to maximum allowed SwapChain images {%u}", desc->imagecount, caps.maxImageCount);
+		((swapchaindesc_t*)desc)->imagecount = caps.maxImageCount;
 	}
-	if (desc->mImageCount < caps.minImageCount)
-	{
-		LOGF(
-			LogLevel::eWARNING, "Changed requested SwapChain images {%u} to minimum required SwapChain images {%u}", desc->mImageCount,
-			caps.minImageCount);
-		((SwapChainDesc*)desc)->mImageCount = caps.minImageCount;
+	if (desc->imagecount < caps.minImageCount) {
+		TRACE(LOG_WARNING, "Changed requested SwapChain images {%u} to minimum required SwapChain images {%u}", desc->imagecount, caps.minImageCount);
+		((swapchaindesc_t*)desc)->imagecount = caps.minImageCount;
 	}
-
 	// Surface format
 	// Select a surface format, depending on whether HDR is available.
-
-	DECLARE_ZERO(VkSurfaceFormatKHR, surface_format);
+	VkSurfaceFormatKHR surface_format = { 0 };
 	surface_format.format = VK_FORMAT_UNDEFINED;
-	uint32_t            surfaceFormatCount = 0;
+	uint32_t surfacefmtcount = 0;
 	VkSurfaceFormatKHR* formats = NULL;
 
 	// Get surface formats count
-	CHECK_VKRESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(renderer->vulkan.activegpu, vkSurface, &surfaceFormatCount, NULL));
+	CHECK_VKRESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(renderer->vulkan.activegpu, surface, &surfacefmtcount, NULL));
 
 	// Allocate and get surface formats
-	formats = (VkSurfaceFormatKHR*)tc_calloc(surfaceFormatCount, sizeof(*formats));
-	CHECK_VKRESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(renderer->vulkan.activegpu, vkSurface, &surfaceFormatCount, formats));
-
-	if ((1 == surfaceFormatCount) && (VK_FORMAT_UNDEFINED == formats[0].format))
-	{
+	formats = (VkSurfaceFormatKHR*)tc_calloc(surfacefmtcount, sizeof(*formats));
+	CHECK_VKRESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(renderer->vulkan.activegpu, surface, &surfacefmtcount, formats));
+	if ((1 == surfacefmtcount) && (VK_FORMAT_UNDEFINED == formats[0].format)) {
 		surface_format.format = VK_FORMAT_B8G8R8A8_UNORM;
 		surface_format.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 	}
-	else
-	{
-		VkSurfaceFormatKHR hdrSurfaceFormat = { VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT };
-		VkFormat           requested_format = (VkFormat)TinyImageFormat_ToVkFormat(desc->mColorFormat);
-		VkColorSpaceKHR    requested_color_space =
-			requested_format == hdrSurfaceFormat.format ? hdrSurfaceFormat.colorSpace : VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-		for (uint32_t i = 0; i < surfaceFormatCount; ++i)
-		{
-			if ((requested_format == formats[i].format) && (requested_color_space == formats[i].colorSpace))
-			{
+	else {
+		VkSurfaceFormatKHR hdrfmt = { VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT };
+		VkFormat requested_format = (VkFormat)TinyImageFormat_ToVkFormat(desc->colorformat);
+		VkColorSpaceKHR requested_color_space = requested_format == hdrfmt.format ? hdrfmt.colorSpace : VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+		for (uint32_t i = 0; i < surfacefmtcount; i++) {
+			if ((requested_format == formats[i].format) && (requested_color_space == formats[i].colorSpace)) {
 				surface_format.format = requested_format;
 				surface_format.colorSpace = requested_color_space;
 				break;
 			}
 		}
-
-		// Default to VK_FORMAT_B8G8R8A8_UNORM if requested format isn't found
-		if (VK_FORMAT_UNDEFINED == surface_format.format)
-		{
+		if (VK_FORMAT_UNDEFINED == surface_format.format) {		// Default to VK_FORMAT_B8G8R8A8_UNORM if requested format isn't found
 			surface_format.format = VK_FORMAT_B8G8R8A8_UNORM;
 			surface_format.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 		}
 	}
-
-	// Free formats
 	tc_free(formats);
 
 	// The VK_PRESENT_MODE_FIFO_KHR mode must always be present as per spec
 	// This mode waits for the vertical blank ("v-sync")
-	VkPresentModeKHR  present_mode = VK_PRESENT_MODE_FIFO_KHR;
-	uint32_t          swapChainImageCount = 0;
+	VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
+	uint32_t swapChainImageCount = 0;
 	VkPresentModeKHR* modes = NULL;
-	// Get present mode count
-	CHECK_VKRESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(renderer->vulkan.activegpu, vkSurface, &swapChainImageCount, NULL));
+	CHECK_VKRESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(renderer->vulkan.activegpu, surface, &swapChainImageCount, NULL));
+	modes = (VkPresentModeKHR*)alloca(swapChainImageCount * sizeof(*modes));		// Allocate and get present modes
+	CHECK_VKRESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(renderer->vulkan.activegpu, surface, &swapChainImageCount, modes));
 
-	// Allocate and get present modes
-	modes = (VkPresentModeKHR*)alloca(swapChainImageCount * sizeof(*modes));
-	CHECK_VKRESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(renderer->vulkan.activegpu, vkSurface, &swapChainImageCount, modes));
-
-	const uint32_t   preferredModeCount = 4;
-	VkPresentModeKHR preferredModeList[preferredModeCount] = { VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_MAILBOX_KHR,
-															   VK_PRESENT_MODE_FIFO_RELAXED_KHR, VK_PRESENT_MODE_FIFO_KHR };
-	uint32_t         preferredModeStartIndex = desc->mEnableVsync ? 2 : 0;
-
-	for (uint32_t j = preferredModeStartIndex; j < preferredModeCount; ++j)
-	{
-		VkPresentModeKHR mode = preferredModeList[j];
-		uint32_t         i = 0;
+	const uint32_t preferredmodecount = 4;
+	VkPresentModeKHR preferredModes[] = { VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_FIFO_RELAXED_KHR, VK_PRESENT_MODE_FIFO_KHR };
+	uint32_t start = desc->vsync ? 2 : 0;
+	for (uint32_t j = start; j < preferredmodecount; j++) {
+		VkPresentModeKHR mode = preferredModes[j];
+		uint32_t i = 0;
 		for (; i < swapChainImageCount; ++i)
-		{
 			if (modes[i] == mode)
-			{
 				break;
-			}
-		}
-		if (i < swapChainImageCount)
-		{
+		if (i < swapChainImageCount) {
 			present_mode = mode;
 			break;
 		}
 	}
-
-	// Swapchain
 	VkExtent2D extent = { 0 };
 	extent.width = clamp(desc->width, caps.minImageExtent.width, caps.maxImageExtent.width);
 	extent.height = clamp(desc->height, caps.minImageExtent.height, caps.maxImageExtent.height);
 
 	VkSharingMode sharing_mode = VK_SHARING_MODE_EXCLUSIVE;
-	uint32_t      queue_family_index_count = 0;
-	uint32_t      queue_family_indices[2] = { desc->ppPresentQueues[0]->vulkan.mVkQueueFamilyIndex, 0 };
-	uint32_t      presentQueueFamilyIndex = -1;
-
-	// Get queue family properties
-	uint32_t                 queuefampropscount = 0;
+	uint32_t queue_family_index_count = 0;
+	uint32_t famindices[2] = { desc->presentqueues[0]->vulkan.queuefamilyindex, 0 };
+	uint32_t famidx = -1;
+	uint32_t queuefampropscount = 0;				
 	VkQueueFamilyProperties* queuefamprops = NULL;
-	vkGetPhysicalDeviceQueueFamilyProperties(renderer->vulkan.activegpu, &queuefampropscount, NULL);
+	vkGetPhysicalDeviceQueueFamilyProperties(renderer->vulkan.activegpu, &queuefampropscount, NULL);		// Get queue family properties
 	queuefamprops = (VkQueueFamilyProperties*)alloca(queuefampropscount * sizeof(VkQueueFamilyProperties));
 	vkGetPhysicalDeviceQueueFamilyProperties(renderer->vulkan.activegpu, &queuefampropscount, queuefamprops);
 
 	// Check if hardware provides dedicated present queue
-	if (queuefampropscount)
-	{
-		for (uint32_t index = 0; index < queuefampropscount; ++index)
-		{
+	if (queuefampropscount) {
+		for (uint32_t i = 0; i < queuefampropscount; i++) {
 			VkBool32 supports_present = VK_FALSE;
-			VkResult res = vkGetPhysicalDeviceSurfaceSupportKHR(renderer->vulkan.activegpu, index, vkSurface, &supports_present);
-			if ((VK_SUCCESS == res) && (VK_TRUE == supports_present) && desc->ppPresentQueues[0]->vulkan.mVkQueueFamilyIndex != index)
-			{
-				presentQueueFamilyIndex = index;
+			VkResult res = vkGetPhysicalDeviceSurfaceSupportKHR(renderer->vulkan.activegpu, i, surface, &supports_present);
+			if ((VK_SUCCESS == res) && (VK_TRUE == supports_present) && desc->presentqueues[0]->vulkan.queuefamilyindex != i) {
+				famidx = i;
 				break;
 			}
 		}
-
-		// If there is no dedicated present queue, just find the first available queue which supports present
-		if (presentQueueFamilyIndex == UINT32_MAX)
-		{
-			for (uint32_t index = 0; index < queuefampropscount; ++index)
-			{
+		if (famidx == UINT32_MAX) {		// If there is no dedicated present queue, just find the first available queue which supports present
+			for (uint32_t i = 0; i < queuefampropscount; i++) {
 				VkBool32 supports_present = VK_FALSE;
-				VkResult res = vkGetPhysicalDeviceSurfaceSupportKHR(renderer->vulkan.activegpu, index, vkSurface, &supports_present);
-				if ((VK_SUCCESS == res) && (VK_TRUE == supports_present))
-				{
-					presentQueueFamilyIndex = index;
+				VkResult res = vkGetPhysicalDeviceSurfaceSupportKHR(renderer->vulkan.activegpu, i, surface, &supports_present);
+				if ((VK_SUCCESS == res) && (VK_TRUE == supports_present)) {
+					famidx = i;
 					break;
 				}
-				else
-				{
-					// No present queue family available. Something goes wrong.
-					TC_ASSERT(0);
-				}
+				else TC_ASSERT(0 && "No present queue family available. Something goes wrong.");
 			}
 		}
 	}
-
-	// Find if gpu has a dedicated present queue
-	VkQueue  presentQueue;
+	VkQueue presentQueue;
 	uint32_t finalPresentQueueFamilyIndex;
-	if (presentQueueFamilyIndex != UINT32_MAX && queue_family_indices[0] != presentQueueFamilyIndex)
-	{
-		queue_family_indices[0] = presentQueueFamilyIndex;
-		vkGetDeviceQueue(renderer->vulkan.device, queue_family_indices[0], 0, &presentQueue);
+	if (famidx != UINT32_MAX && famindices[0] != famidx) {		// Find if gpu has a dedicated present queue
+		famindices[0] = famidx;
+		vkGetDeviceQueue(renderer->vulkan.device, famindices[0], 0, &presentQueue);
 		queue_family_index_count = 1;
-		finalPresentQueueFamilyIndex = presentQueueFamilyIndex;
+		finalPresentQueueFamilyIndex = famidx;
 	}
-	else
-	{
-		finalPresentQueueFamilyIndex = queue_family_indices[0];
+	else {
+		finalPresentQueueFamilyIndex = famindices[0];
 		presentQueue = VK_NULL_HANDLE;
 	}
-
 	VkSurfaceTransformFlagBitsKHR pre_transform;
-	// #TODO: Add more if necessary but identity should be enough for now
 	if (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
-	{
 		pre_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-	}
 	else
-	{
 		pre_transform = caps.currentTransform;
-	}
 
 	VkCompositeAlphaFlagBitsKHR compositeAlphaFlags[] = {
 		VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
@@ -2752,10 +2458,9 @@ void vk_addSwapChain(renderer_t* renderer, const SwapChainDesc* desc, SwapChain*
 		VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
 	};
 	VkCompositeAlphaFlagBitsKHR composite_alpha = VK_COMPOSITE_ALPHA_FLAG_BITS_MAX_ENUM_KHR;
-	for (VkCompositeAlphaFlagBitsKHR flag : compositeAlphaFlags)
-	{
-		if (caps.supportedCompositeAlpha & flag)
-		{
+	for (int i = 0; i < ARRAYSIZE(compositeAlphaFlags); i++) {
+		VkCompositeAlphaFlagBitsKHR flag = compositeAlphaFlags[i];
+		if (caps.supportedCompositeAlpha & flag) {
 			composite_alpha = flag;
 			break;
 		}
@@ -2764,55 +2469,52 @@ void vk_addSwapChain(renderer_t* renderer, const SwapChainDesc* desc, SwapChain*
 	TC_ASSERT(composite_alpha != VK_COMPOSITE_ALPHA_FLAG_BITS_MAX_ENUM_KHR);
 
 	VkSwapchainKHR vkSwapchain;
-	DECLARE_ZERO(VkSwapchainCreateInfoKHR, swapChainCreateInfo);
-	swapChainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-	swapChainCreateInfo.pNext = NULL;
-	swapChainCreateInfo.flags = 0;
-	swapChainCreateInfo.surface = vkSurface;
-	swapChainCreateInfo.minImageCount = desc->mImageCount;
-	swapChainCreateInfo.imageFormat = surface_format.format;
-	swapChainCreateInfo.imageColorSpace = surface_format.colorSpace;
-	swapChainCreateInfo.imageExtent = extent;
-	swapChainCreateInfo.imageArrayLayers = 1;
-	swapChainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-	swapChainCreateInfo.imageSharingMode = sharing_mode;
-	swapChainCreateInfo.queueFamilyIndexCount = queue_family_index_count;
-	swapChainCreateInfo.pQueueFamilyIndices = queue_family_indices;
-	swapChainCreateInfo.preTransform = pre_transform;
-	swapChainCreateInfo.compositeAlpha = composite_alpha;
-	swapChainCreateInfo.presentMode = present_mode;
-	swapChainCreateInfo.clipped = VK_TRUE;
-	swapChainCreateInfo.oldSwapchain = 0;
-	CHECK_VKRESULT(vkCreateSwapchainKHR(renderer->vulkan.device, &swapChainCreateInfo, &alloccbs, &vkSwapchain));
+	VkSwapchainCreateInfoKHR info = { 0 };
+	info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+	info.surface = surface;
+	info.minImageCount = desc->imagecount;
+	info.imageFormat = surface_format.format;
+	info.imageColorSpace = surface_format.colorSpace;
+	info.imageExtent = extent;
+	info.imageArrayLayers = 1;
+	info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	info.imageSharingMode = sharing_mode;
+	info.queueFamilyIndexCount = queue_family_index_count;
+	info.pQueueFamilyIndices = famindices;
+	info.preTransform = pre_transform;
+	info.compositeAlpha = composite_alpha;
+	info.presentMode = present_mode;
+	info.clipped = VK_TRUE;
+	CHECK_VKRESULT(vkCreateSwapchainKHR(renderer->vulkan.device, &info, &alloccbs, &vkSwapchain));
 
-	((SwapChainDesc*)desc)->mColorFormat = TinyImageFormat_FromVkFormat((TinyImageFormat_VkFormat)surface_format.format);
+	((swapchaindesc_t*)desc)->colorformat = TinyImageFormat_FromVkFormat((TinyImageFormat_VkFormat)surface_format.format);
 
 	// Create rendertargets from swapchain
 	uint32_t imageCount = 0;
 	CHECK_VKRESULT(vkGetSwapchainImagesKHR(renderer->vulkan.device, vkSwapchain, &imageCount, NULL));
 
-	TC_ASSERT(imageCount >= desc->mImageCount);
+	TC_ASSERT(imageCount >= desc->imagecount);
 
 	VkImage* images = (VkImage*)alloca(imageCount * sizeof(VkImage));
 
 	CHECK_VKRESULT(vkGetSwapchainImagesKHR(renderer->vulkan.device, vkSwapchain, &imageCount, images));
 
-	SwapChain* pSwapChain = (SwapChain*)tc_calloc(1, sizeof(SwapChain) + imageCount * sizeof(RenderTarget*) + sizeof(SwapChainDesc));
-	pSwapChain->rendertargets = (RenderTarget**)(pSwapChain + 1);
-	pSwapChain->vulkan.desc = (SwapChainDesc*)(pSwapChain->rendertargets + imageCount);
+	SwapChain* pSwapChain = (swapchain_t*)tc_calloc(1, sizeof(SwapChain) + imageCount * sizeof(RenderTarget*) + sizeof(SwapChainDesc));
+	pSwapChain->rendertargets = (rendertarget_t**)(pSwapChain + 1);
+	pSwapChain->vulkan.desc = (swapchaindesc_t*)(pSwapChain->rendertargets + imageCount);
 	TC_ASSERT(pSwapChain);
 
-	RenderTargetDesc descColor = { 0 };
-	descColor.width = desc->width;
-	descColor.height = desc->height;
-	descColor.mDepth = 1;
-	descColor.arraysize = 1;
-	descColor.mFormat = desc->mColorFormat;
-	descColor.mClearValue = desc->mColorClearValue;
-	descColor.mSampleCount = SAMPLE_COUNT_1;
-	descColor.mSampleQuality = 0;
-	descColor.mStartState = RESOURCE_STATE_PRESENT;
-	descColor.mNodeIndex = renderer->mUnlinkedRendererIndex;
+	rendertargetdesc_t rtdesc = { 0 };
+	rtdesc.width = desc->width;
+	rtdesc.height = desc->height;
+	rtdesc.depth = 1;
+	rtdesc.arraysize = 1;
+	rtdesc.format = desc->colorformat;
+	rtdesc.mClearValue = desc->colorclearvalue;
+	rtdesc.mSampleCount = SAMPLE_COUNT_1;
+	rtdesc.mSampleQuality = 0;
+	rtdesc.mStartState = RESOURCE_STATE_PRESENT;
+	rtdesc.mNodeIndex = renderer->unlinkedrendererindex;
 
 	char buffer[32] = { 0 };
 	// Populate the vk_image field and add the Vulkan texture objects
@@ -2828,7 +2530,7 @@ void vk_addSwapChain(renderer_t* renderer, const SwapChainDesc* desc, SwapChain*
 	*pSwapChain->vulkan.desc = *desc;
 	pSwapChain->mEnableVsync = desc->mEnableVsync;
 	pSwapChain->mImageCount = imageCount;
-	pSwapChain->vulkan.pVkSurface = vkSurface;
+	pSwapChain->vulkan.pVkSurface = surface;
 	pSwapChain->vulkan.mPresentQueueFamilyIndex = finalPresentQueueFamilyIndex;
 	pSwapChain->vulkan.pPresentQueue = presentQueue;
 	pSwapChain->vulkan.pSwapChain = vkSwapchain;
@@ -2883,7 +2585,7 @@ void vk_add_buffer(renderer_t* renderer, const BufferDesc* desc, buffer_t** ppBu
 	info.size = allocationSize;
 	info.usage = util_to_vk_buffer_usage(desc->descriptors, desc->mFormat != TinyImageFormat_UNDEFINED);
 	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	info.queueFamilyIndexCount = 0;
+	info.famidxCount = 0;
 	info.pQueueFamilyIndices = NULL;
 
 	// Buffer can be used as dest in a transfer command (Uploading data to a storage buffer, Readback query data)
@@ -3138,7 +2840,7 @@ void vk_add_texture(renderer_t* renderer, const texturedesc_t* desc, texture_t**
 		info.usage = util_to_vk_image_usage(descriptors);
 		info.usage |= additionalFlags;
 		info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		info.queueFamilyIndexCount = 0;
+		info.famidxCount = 0;
 		info.pQueueFamilyIndices = NULL;
 		info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 

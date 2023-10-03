@@ -93,16 +93,16 @@ set_rendertargetname_func set_rendertargetname;
 set_pipelinename_func set_pipelinename;
 
 // Internal Resource Load Functions
-typedef void (*add_buffer_func)(renderer_t* renderer, const bufferdesc_t* desc, buffer_t** buf);
+typedef void (*add_buffer_func)(renderer_t* renderer, const bufferdesc_t* desc, buffer_t* buf);
 typedef void (*remove_buffer_func)(renderer_t* renderer, buffer_t* buf);
 typedef void (*map_buffer_func)(renderer_t* renderer, buffer_t* buf, range_t* range);
 typedef void (*unmap_buffer_func)(renderer_t* renderer, buffer_t* buf);
 typedef void (*cmd_updatebuffer_func)(cmd_t* cmd, buffer_t* buf, uint64_t dstoffset, buffer_t* srcbuf, uint64_t srcoffset, uint64_t size);
 typedef void (*cmd_updatesubresource_func)(cmd_t* cmd, texture_t* tex, buffer_t* srcbuf, const struct subresourcedatadesc_s* desc);
 typedef void (*cmd_copysubresource_func)(cmd_t* cmd, buffer_t* dstbuf, texture_t* tex, const struct subresourcedatadesc_s* desc);
-typedef void (*add_texture_func)(renderer_t* renderer, const texturedesc_t* desc, texture_t** tex);
+typedef void (*add_texture_func)(renderer_t* renderer, const texturedesc_t* desc, texture_t* tex);
 typedef void (*remove_texture_func)(renderer_t* renderer, texture_t* tex);
-typedef void (*add_virtualtexture_func)(cmd_t* cmd, const texturedesc_t* desc, texture_t** tex, void* imagedata);
+typedef void (*add_virtualtexture_func)(cmd_t* cmd, const texturedesc_t* desc, texture_t* tex, void* imagedata);
 typedef void (*remove_virtualtexture_func)(renderer_t* renderer, virtualtexture_t* tex);
 
 add_buffer_func add_buffer;
@@ -120,12 +120,12 @@ remove_virtualtexture_func remove_virtualtexture;
 static renderertype_t selected_api;
 
 #if defined(VULKAN)
-extern void init_vulkanrenderer(const char* appname, const rendererdesc_t* desc, renderer_t** renderer);
+extern void init_vulkanrenderer(const char* appname, const rendererdesc_t* desc, renderer_t* renderer);
 extern void init_vulkanraytracingfuncs();
 extern void exit_vulkanrenderer(renderer_t* renderer);
 #endif
 
-static void init_rendererapi(const char* appname, const rendererdesc_t* desc, renderer_t** renderer, const renderertype_t api)
+static void init_rendererapi(const char* appname, const rendererdesc_t* desc, renderer_t* renderer, const renderertype_t api)
 {
 	switch (api) {
 #if defined(VULKAN)
@@ -154,7 +154,7 @@ static void exit_rendererapi(renderer_t* renderer, const renderertype_t api)
 	}
 }
 
-void init_renderer(const char* appname, const rendererdesc_t* desc, renderer_t** renderer)
+void init_renderer(const char* appname, const rendererdesc_t* desc, renderer_t* renderer)
 {
 	TC_ASSERT(renderer && *renderer == NULL);
 	TC_ASSERT(desc);

@@ -6,9 +6,9 @@
 #define TinyImageFormat_HAVE_UINTXX_T
 #include <tinyimageformat.h>
 
-
 #include "private/vkgraphics.h"
 
+#include <GLFW/glfw3.h>
 
 #if defined(ANDROID) || defined(SWITCH) || defined(TARGET_APPLE_ARM64)
 #define USE_MSAA_RESOLVE_ATTACHMENTS
@@ -43,9 +43,11 @@ enum {
 	MAX_MULTIPLE_GPUS = 4,
 	MAX_PLANE_COUNT = 3,
 	MAX_LINKED_GPUS = 4,
+	MAX_UNLINKED_GPUS = 4,
 	MAX_DESCRIPTOR_POOL_SIZE_ARRAY_COUNT = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT + 1,
 	MAX_INSTANCE_EXTENSIONS = 64,
 	MAX_DEVICE_EXTENSIONS = 64,
+	MAX_SWAPCHAIN_IMAGES = 3,
 };
 
 typedef enum {
@@ -413,7 +415,7 @@ typedef enum {
 } texturetype_t;
 
 
-/** Resource bariers */
+/* Resource bariers */
 
 struct barrier_s {
 	resourcestate_t currentstate;
@@ -554,14 +556,14 @@ typedef struct {
 			void* pool;										// GPU memory pool for tiles
 			VkSparseImageMemoryBind* sparseimagemembinds;	// Sparse image memory bindings of all memory-backed virtual tables
 			VkSparseMemoryBind* opaquemembinds;				// Sparse opaque memory bindings for the mip tail (if present)
-			void** opaquemembindalloc;						// GPU allocations for opaque memory binds (mip tail)
-			void** pendingdeletedallocs;					// Pending allocation deletions
+			void* opaquemembindalloc;						// GPU allocations for opaque memory binds (mip tail)
+			void* pendingdeletedallocs;					// Pending allocation deletions
 			uint32_t sparsememtypebits;						// Memory type bits for sparse texture's memory
 			uint32_t opaquemembindscount;					// Number of opaque memory binds
 		} vulkan;
 #endif
 	virtualtexpage_t* pages;								// Virtual Texture members
-	buffer_t** pendingdeletedbufs;							// Pending intermediate buffer deletions
+	buffer_t* pendingdeletedbufs;							// Pending intermediate buffer deletions
 	uint32_t* pendingdeletedbufcount;						// Pending intermediate buffer deletions count
 	uint32_t* pendingdeletedalloccount;						// Pending allocation deletions count
 	buffer_t* readbackbuf;									// Readback buffer, must be filled by app. Size = readbackbufsize * imagecount
@@ -742,11 +744,11 @@ typedef enum {
 } rootsignatureflags_t;
 
 typedef struct {
-	shader_t** shaders;
+	shader_t* shaders;
 	uint32_t shadercount;
 	uint32_t maxbindlesstextures;
-	const char** staticsamplernames;
-	sampler_t** staticsamplers;
+	const char* staticsamplernames;
+	sampler_t* staticsamplers;
 	uint32_t staticsamplercount;
 	rootsignatureflags_t flags;
 } rootsignaturedesc_t;
@@ -794,10 +796,10 @@ typedef struct {
 	};
 	/// Array of resources containing descriptor handles or constant to be used in ring buffer memory - DescriptorRange can hold only one resource type array
 	union {
-		texture_t** textures;						// Array of texture descriptors (srv and uav textures)
-		sampler_t** samplers;						// Array of sampler descriptors
-		buffer_t** buffers;							// Array of buffer descriptors (srv, uav and cbv buffers)
-		accelstruct_t** accelstructs;				// Custom binding (raytracing acceleration structure ...)
+		texture_t* textures;						// Array of texture descriptors (srv and uav textures)
+		sampler_t* samplers;						// Array of sampler descriptors
+		buffer_t* buffers;							// Array of buffer descriptors (srv, uav and cbv buffers)
+		accelstruct_t* accelstructs;				// Custom binding (raytracing acceleration structure ...)
 	};
 } descdata_t;
 
@@ -903,7 +905,7 @@ typedef struct queue_s {
 		struct
 		{
 			VkQueue queue;
-			lock_t* submitmutex;
+			lock_t* submitlck;
 			uint32_t flags;
 			float timestampperiod;
 			uint32_t queuefamilyindex : 5;
@@ -917,7 +919,7 @@ typedef struct queue_s {
 } queue_t;
 
 
-/** Shader reflection */
+/* Shader reflection */
 
 typedef struct {
 	const char* name;	// resource name
@@ -1013,7 +1015,7 @@ typedef struct shader_s {
 #if defined(VULKAN)
 		struct {
 			VkShaderModule* shadermodules;
-			char** entrynames;
+			char* entrynames;
 			VkSpecializationInfo* specializationinfo;
 		} vulkan;
 #endif
@@ -1094,8 +1096,8 @@ typedef struct {
 	rootsignature_t* globalrootsignature;
 	shader_t* raygenshader;
 	rootsignature_t* raygenrootsignature;
-	shader_t** missshaders;
-	rootsignature_t** missrootsignatures;
+	shader_t* missshaders;
+	rootsignature_t* missrootsignatures;
 	raytracinghitgroup_t* hitgroups;
 	rootsignature_t* emptyrootsignature;
 	unsigned missshadercount;
@@ -1164,7 +1166,7 @@ typedef struct ALIGNED(pipeline_s, 64) {
 			VkPipeline pipeline;
 			pipelinetype_t type;
 			uint32_t shaderstagecount;
-			const char** shaderstagenames;
+			const char* shaderstagenames;
 		} vulkan;
 #endif
 	};
@@ -1174,7 +1176,7 @@ TC_COMPILE_ASSERT(sizeof(pipeline_t) == 8 * sizeof(uint64_t));
 typedef enum { SWAP_CHAIN_CREATION_FLAG_NONE, SWAP_CHAIN_CREATION_FLAG_ENABLE_FOVEATED_RENDERING_VR } swapchaincreationflags_t;
 
 typedef struct {
-	void* windowhandle;				// Window handle
+	GLFWwindow* window;				// Window handle
 	queue_t** presentqueues;		// Queues which should be allowed to present
 	uint32_t presentqueuecount;		// Number of present queues
 	uint32_t imagecount;			// Number of backbuffers in this swapchain
@@ -1188,7 +1190,7 @@ typedef struct {
 } swapchaindesc_t;
 
 typedef struct {
-	rendertarget_t** rts;			// Render targets created from the swapchain back buffers
+	rendertarget_t* rts;			// Render targets created from the swapchain back buffers
 #if defined(VULKAN)
 		struct {
 			VkQueue presentqueue;	// Present queue if one exists (queuePresent will use this queue if the hardware has a dedicated present queue)
@@ -1217,16 +1219,16 @@ typedef enum { GPU_MODE_SINGLE, GPU_MODE_LINKED, GPU_MODE_UNLINKED } gpumode_t;
 typedef struct {
 	uint32_t numsettings;
 	uint32_t* settings;
-	const char** settingnames;
+	const char* settingnames;
 } extendedsettings_t;
 
 typedef struct {
 #if defined(VULKAN)
 		struct
 		{
-			const char** instancelayers;
-			const char** instanceextensions;
-			const char** deviceextensions;
+			const char* instancelayers;
+			const char* instanceextensions;
+			const char* deviceextensions;
 			uint32_t instancelayercount;
 			uint32_t instanceextensioncount;
 			uint32_t deviceextensioncount;
@@ -1434,10 +1436,10 @@ typedef struct {
 } descriptorsetdesc_t;
 
 typedef struct {
-	cmd_t** cmds;
+	cmd_t* cmds;
 	fence_t* signalfence;
-	semaphore_t** waitsemaphores;
-	semaphore_t** signalsemaphores;
+	semaphore_t* waitsemaphores;
+	semaphore_t* signalsemaphores;
 	uint32_t cmdcount;
 	uint32_t waitsemaphorecount;
 	uint32_t signalsemaphorecount;
@@ -1446,7 +1448,7 @@ typedef struct {
 
 typedef struct {
 	swapchain_t* swapchain;
-	semaphore_t** waitsemaphores;
+	semaphore_t* waitsemaphores;
 	uint32_t waitsemaphorecount;
 	uint8_t index;
 	bool submitdone;
@@ -1455,54 +1457,55 @@ typedef struct {
 
 
 // Queue/fence/swapchain functions
-typedef void (*add_fence_func)(renderer_t* renderer, fence_t** fence);
+typedef void (*add_fence_func)(renderer_t* renderer, fence_t* fence);
 typedef void (*remove_fence_func)(renderer_t* renderer, fence_t* fence);
-typedef void (*add_semaphore_func)(renderer_t* renderer, semaphore_t** semaphore);
+typedef void (*add_semaphore_func)(renderer_t* renderer, semaphore_t* semaphore);
 typedef void (*remove_semaphore_func)(renderer_t* renderer, semaphore_t* semaphore);
-typedef void (*add_queue_func)(renderer_t* renderer, queuedesc_t* desc, queue_t** queue);
+typedef void (*add_queue_func)(renderer_t* renderer, queuedesc_t* desc, queue_t* queue);
 typedef void (*remove_queue_func)(renderer_t* renderer, queue_t* queue);
-typedef void (*add_swapchain_func)(renderer_t* renderer, const swapchaindesc_t* desc, swapchain_t** swapchain);
+
+typedef void (*add_swapchain_func)(renderer_t* renderer, const swapchaindesc_t* desc, swapchain_t* swapchain);
 typedef void (*remove_swapchain_func)(renderer_t* renderer, swapchain_t* swapchain);
 typedef void (*acquire_nextimage_func)(renderer_t* renderer, swapchain_t* swapchain, semaphore_t* signalsemaphore, fence_t* fence, uint32_t* image_idx);
 typedef void (*queue_submit_func)(queue_t* queue, const queuesubmitdesc_t* desc);
 typedef void (*queue_present_func)(queue_t* queue, const queuepresentdesc_t* desc);
 typedef void (*queue_waitidle_func)(queue_t* queue);
 typedef void (*get_fencestatus_func)(renderer_t* renderer, fence_t* fence, fencestatus_t* status);
-typedef void (*wait_for_fences_func)(renderer_t* renderer, uint32_t count, fence_t** fences);
-typedef void (*toggle_vsync_func)(renderer_t* renderer, swapchain_t** swapchain);
+typedef void (*wait_for_fences_func)(renderer_t* renderer, uint32_t count, fence_t* fences);
+typedef void (*toggle_vsync_func)(renderer_t* renderer, swapchain_t* swapchain);
 
-typedef void (*add_rendertarget_func)(renderer_t* renderer, const rendertargetdesc_t* desc, rendertarget_t** rt);
+typedef void (*add_rendertarget_func)(renderer_t* renderer, const rendertargetdesc_t* desc, rendertarget_t* rt);
 typedef void (*remove_rendertarget_func)(renderer_t* renderer, rendertarget_t* rt);
-typedef void (*add_sampler_func)(renderer_t* renderer, const samplerdesc_t* desc, sampler_t** sampler);
+typedef void (*add_sampler_func)(renderer_t* renderer, const samplerdesc_t* desc, sampler_t* sampler);
 typedef void (*remove_sampler_func)(renderer_t* renderer, sampler_t* sampler);
-typedef void (*add_shaderbinary_func)(renderer_t* renderer, const binaryshaderdesc_t* desc, shader_t** shader);
+typedef void (*add_shaderbinary_func)(renderer_t* renderer, const binaryshaderdesc_t* desc, shader_t* shader);
 typedef void (*remove_shader_func)(renderer_t* renderer, shader_t* shader);
 
-typedef void (*add_rootsignature_func)(renderer_t* renderer, const rootsignaturedesc_t* desc, rootsignature_t** rootsignature);
+typedef void (*add_rootsignature_func)(renderer_t* renderer, const rootsignaturedesc_t* desc, rootsignature_t* rootsignature);
 typedef void (*remove_rootsignature_func)(renderer_t* renderer, rootsignature_t* rootsignature);
 
 // Pipeline functions
-typedef void (*add_pipeline_func)(renderer_t* renderer, const pipelinedesc_t* desc, pipeline_t** pipeline);
+typedef void (*add_pipeline_func)(renderer_t* renderer, const pipelinedesc_t* desc, pipeline_t* pipeline);
 typedef void (*remove_pipeline_func)(renderer_t* renderer, pipeline_t* pipeline);
-typedef void (*add_pipelinecache_func)(renderer_t* renderer, const pipelinecachedesc_t* desc, pipelinecache_t** cache);
+typedef void (*add_pipelinecache_func)(renderer_t* renderer, const pipelinecachedesc_t* desc, pipelinecache_t* cache);
 typedef void (*get_pipelinecachedata_func)(renderer_t* renderer, pipelinecache_t* cache, size_t* size, void* data);
 typedef void (*remove_pipelinecache_func)(renderer_t* renderer, pipelinecache_t* cache);
 
 // Descriptor Set functions
-typedef void (*add_descriptorset_func)(renderer_t* renderer, const descriptorsetdesc_t* desc, descset_t** descset);
+typedef void (*add_descriptorset_func)(renderer_t* renderer, const descriptorsetdesc_t* desc, descset_t* descset);
 typedef void (*remove_descriptorset_func)(renderer_t* renderer, descset_t* descset);
 typedef void (*update_descriptorset_func)(renderer_t* renderer, uint32_t index, descset_t* descset, uint32_t count, const descdata_t* data);
 
 // Command buffer functions
-typedef void (*add_cmdpool_func)(renderer_t* renderer, const cmdpooldesc_t* desc, cmdpool_t** pool);
+typedef void (*add_cmdpool_func)(renderer_t* renderer, const cmdpooldesc_t* desc, cmdpool_t* pool);
 typedef void (*remove_cmdpool_func)(renderer_t* renderer, cmdpool_t* pool);
-typedef void (*add_cmds_func)(renderer_t* renderer, const cmddesc_t* desc, uint32_t count, cmd_t** cmds);
+typedef void (*add_cmds_func)(renderer_t* renderer, const cmddesc_t* desc, uint32_t count, cmd_t* cmds);
 typedef void (*remove_cmds_func)(renderer_t* renderer, uint32_t count, cmd_t* cmds);
 typedef void (*reset_cmdpool_func)(renderer_t* renderer, cmdpool_t* pool);
 
 typedef void (*cmd_begin_func)(cmd_t* cmd);
 typedef void (*cmd_end_func)(cmd_t* cmd);
-typedef void (*cmd_bindrts_func)(cmd_t* cmd, uint32_t count, rendertarget_t** rts, rendertarget_t* depthstencil, const loadactionsdesc_t* loadactions, uint32_t* colorarrayslices, uint32_t* colormipslices, uint32_t deptharrayslice, uint32_t depthmipslice);
+typedef void (*cmd_bindrts_func)(cmd_t* cmd, uint32_t count, rendertarget_t* rts, rendertarget_t* depthstencil, const loadactionsdesc_t* loadactions, uint32_t* colorarrayslices, uint32_t* colormipslices, uint32_t deptharrayslice, uint32_t depthmipslice);
 typedef void (*cmd_setshadingrate_func)(cmd_t* cmd, shadingrate_t shading_rate, texture_t* tex, shadingratecombiner_t post_rasterizer_rate, shadingratecombiner_t final_rate);
 typedef void (*cmd_setviewport_func)(cmd_t* cmd, float x, float y, float w, float h, float min_depth, float max_depth);
 typedef void (*cmd_setscissor_func)(cmd_t* cmd, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
@@ -1512,7 +1515,7 @@ typedef void (*cmd_binddescset_func)(cmd_t* cmd, uint32_t index, descset_t* desc
 typedef void (*cmd_bindpushconstants_func)(cmd_t* cmd, rootsignature_t* rootsignature, uint32_t paramindex, const void* constants);
 typedef void (*cmd_binddescsetwithrootbbvs_func)(cmd_t* cmd, uint32_t index, descset_t* descset, uint32_t count, const descdata_t* params);
 typedef void (*cmd_bindindexbuffer_func)(cmd_t* cmd, buffer_t* buf, uint32_t indextype, uint64_t offset);
-typedef void (*cmd_bindvertexbuffer_func)(cmd_t* cmd, uint32_t count, buffer_t** bufs, const uint32_t* strides, const uint64_t* poffsets);
+typedef void (*cmd_bindvertexbuffer_func)(cmd_t* cmd, uint32_t count, buffer_t* bufs, const uint32_t* strides, const uint64_t* poffsets);
 typedef void (*cmd_draw_func)(cmd_t* cmd, uint32_t vertex_count, uint32_t first_vertex);
 typedef void (*cmd_drawinstanced_func)(cmd_t* cmd, uint32_t vertex_count, uint32_t first_vertex, uint32_t instance_count, uint32_t first_instance);
 typedef void (*cmd_drawindexed_func)(cmd_t* cmd, uint32_t index_count, uint32_t first_index, uint32_t first_vertex);
@@ -1533,13 +1536,13 @@ typedef void (*cmd_updatevirtualtexture_func)(cmd_t* cmd, texture_t* tex, uint32
 typedef TinyImageFormat (*recommendedswapchainfmt_func)(bool hintHDR, bool hintSRGB);
 
 // Indirect Draw functions
-typedef void (*add_indirectcmdsignature_func)(renderer_t* renderer, const cmdsignaturedesc_t* desc, cmdsignature_t** cmdsignature);
+typedef void (*add_indirectcmdsignature_func)(renderer_t* renderer, const cmdsignaturedesc_t* desc, cmdsignature_t* cmdsignature);
 typedef void (*remove_indirectcmdsignature_func)(renderer_t* renderer, cmdsignature_t* cmdsignature);
 typedef void (*cmd_execindirect_func)(cmd_t* cmd, cmdsignature_t* cmdsignature, unsigned int maxcmdcount, buffer_t* indirectbuf, uint64_t bufoffset, buffer_t* counterbuf, uint64_t counterbufoffset);
 
 // GPU Query Interface
 typedef void (*get_timestampfreq_func)(queue_t* queue, double* freq);
-typedef void (*add_querypool_func)(renderer_t* renderer, const querypooldesc_t* desc, querypool_t** pool);
+typedef void (*add_querypool_func)(renderer_t* renderer, const querypooldesc_t* desc, querypool_t* pool);
 typedef void (*remove_querypool_func)(renderer_t* renderer, querypool_t* pool);
 typedef void (*cmd_resetquerypool_func)(cmd_t* cmd, querypool_t* pool, uint32_t startquery, uint32_t querycount);
 typedef void (*cmd_beginquery_func)(cmd_t* cmd, querypool_t* pool, querydesc_t* query);
@@ -1547,7 +1550,7 @@ typedef void (*cmd_endquery_func)(cmd_t* cmd, querypool_t* pool, querydesc_t* qu
 typedef void (*cmd_resolvequery_func)(cmd_t* cmd, querypool_t* pool, buffer_t* readbackbuf, uint32_t startquery, uint32_t querycount);
 
 // Stats Info Interface
-typedef void (*get_memstats_func)(renderer_t* renderer, char** stats);
+typedef void (*get_memstats_func)(renderer_t* renderer, char* stats);
 typedef void (*get_memuse_func)(renderer_t* renderer, uint64_t* used, uint64_t* totalallocated);
 typedef void (*free_memstats_func)(renderer_t* renderer, char* stats);
 
