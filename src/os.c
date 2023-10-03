@@ -140,7 +140,7 @@ static void* mem_realloc(void* ptr, size_t size) {
 }
 
 void init_context() {
-	context = TC_ALLOC(tc_mem->system, sizeof(struct context_t));
+	context = tc_malloc(sizeof(struct context_t));
 	memset(context, 0, sizeof(struct context_t));
 	context->allocator = tc_buddy_new(tc_mem->vm, OS_ALLOCATOR_SIZE, OS_MIN_ALLOC_SIZE);
 	slab_create(&context->pool, context->allocator, CHUNK_SIZE);

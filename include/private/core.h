@@ -22,22 +22,22 @@
 #endif
 
 #if defined(_WIN32)
-	#define COMPILER_MSVC 1
-	#if _MSC_VER >= 1600
-	#define HAS_STDINT 1
-	#endif
-	#if _MSC_VER >= 1800
-	#define HAS_STDBOOL 1
-	#endif
-	#if defined(_M_X64)
-	#define CPU_X64 1
-	#define PTR_SIZE 8
-	#elif defined(_M_IX86)
-	#define CPU_X86 1
-	#define PTR_SIZE 4
-	#else
-	#error Unrecognized platform!
-	#endif
+#define COMPILER_MSVC 1
+#if _MSC_VER >= 1600
+#define HAS_STDINT 1
+#endif
+#if _MSC_VER >= 1800
+#define HAS_STDBOOL 1
+#endif
+#if defined(_M_X64)
+#define CPU_X64 1
+#define PTR_SIZE 8
+#elif defined(_M_IX86)
+#define CPU_X86 1
+#define PTR_SIZE 4
+#else
+#error Unrecognized platform!
+#endif
 #elif defined(__GNUC__)
 #define COMPILER_GCC 1
 #define HAS_STDINT 1

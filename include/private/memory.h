@@ -47,6 +47,16 @@ typedef struct tc_allocator_i {
 #define tc_free(_p) TC_FREE(tc_mem->sys, _p, 0)
 #define tc_realloc(_p, _s) TC_REALLOC(tc_mem->sys, _p, 0, _s)
 
+// TODO: track this memory also
+#if defined(_WIN32)
+#define tc_memalign(_a, _s) _aligned_malloc((_s), (_a))
+#define tc_freealign(_p) _aligned_free((_p))
+#else
+#define tc_memalign(_a, _s) aligned_alloc((_a), (_s))
+#define tc_freealign(_p) free((_p))
+#endif
+#define alignof _Alignof
+
 typedef struct tc_memory_i {
 
 	tc_allocator_i* sys;

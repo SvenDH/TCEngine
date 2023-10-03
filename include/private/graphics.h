@@ -44,6 +44,8 @@ enum {
 	MAX_PLANE_COUNT = 3,
 	MAX_LINKED_GPUS = 4,
 	MAX_DESCRIPTOR_POOL_SIZE_ARRAY_COUNT = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT + 1,
+	MAX_INSTANCE_EXTENSIONS = 64,
+	MAX_DEVICE_EXTENSIONS = 64,
 };
 
 typedef enum {
@@ -55,6 +57,25 @@ typedef enum {
 	GPU_PRESET_ULTRA,
 	GPU_PRESET_COUNT
 } gpupreset_t;
+
+inline gpupreset_t get_preset_level(const char* vendorid, const char* modelid, const char* revid)
+{
+	// TODO: implement preset config lookup
+	return GPU_PRESET_MEDIUM;
+}
+
+inline const char* presettostr(gpupreset_t preset)
+{
+	switch (preset) {
+	case GPU_PRESET_NONE: return "";
+	case GPU_PRESET_OFFICE: return "office";
+	case GPU_PRESET_LOW: return "low";
+	case GPU_PRESET_MEDIUM: return "medium";
+	case GPU_PRESET_HIGH: return "high";
+	case GPU_PRESET_ULTRA: return "ultra";
+	default: return NULL;
+	}
+}
 
 typedef enum {
 	RENDERER_UNKNOWN = 0,
@@ -1284,7 +1305,7 @@ typedef struct ALIGNED(renderer_s, 64) {
 		struct {
 			VkInstance instance;
 			VkPhysicalDevice activegpu;
-			VkPhysicalDeviceProperties2* activegpuproperties;
+			VkPhysicalDeviceProperties2* activegpuprops;
 			VkDevice device;
 #ifdef ENABLE_DEBUG_UTILS_EXTENSION
 			VkDebugUtilsMessengerEXT debugutilsmessenger;
@@ -1307,7 +1328,7 @@ typedef struct ALIGNED(renderer_s, 64) {
 			uint32_t AMDdrawindirectcountextension : 1;
 			uint32_t descriptorindexingextension : 1;
 			uint32_t shadersampledimagearraydynamicindexingsupported : 1;
-			uint32_t shadersloatcontrolsextension : 1;
+			uint32_t shaderfloatcontrolsextension : 1;
 			uint32_t bufferdeviceaddressextension : 1;
 			uint32_t deferredhostoperationsextension : 1;
 			uint32_t drawindirectcountextension : 1;
@@ -1343,7 +1364,7 @@ typedef struct {
 #if defined(VULKAN)
 		struct {
 			VkPhysicalDevice gpu;
-			VkPhysicalDeviceProperties2 gpuproperties;
+			VkPhysicalDeviceProperties2 gpuprops;
 		} vulkan;
 #endif
 	gpusettings_t settings;
