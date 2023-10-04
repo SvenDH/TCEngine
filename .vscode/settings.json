@@ -50,6 +50,7 @@
         "vk_mem_alloc.h": "c",
         "iosfwd": "c",
         "algorithm": "c",
-        "xhash": "c"
+        "xhash": "c",
+        "initializer_list": "c"
     }
 }

@@ -20,17 +20,6 @@
 
 typedef struct tc_allocator_i tc_allocator_i;
 
-typedef struct buffer_s buffer_t;
-typedef struct texture_s texture_t;
-typedef struct rendertarget_s rendertarget_t;
-typedef struct shader_s shader_t;
-typedef struct descidxmap_s descidxmap_t;
-typedef struct accelstruct_s accelstruct_t;
-typedef struct queue_s queue_t;
-typedef struct raytracing_s raytracing_t;
-typedef struct renderercontext_s renderercontext_t;
-typedef struct renderer_s renderer_t;
-
 enum {
 	NUM_BUFFER_FRAMES = 3,
 	MAX_ATTRIBUTES = 16,
@@ -414,9 +403,65 @@ typedef enum {
 	TEXTURE_UNDEFINED,
 } texturetype_t;
 
+typedef enum { QUERY_TYPE_TIMESTAMP, QUERY_TYPE_PIPELINE_STATS, QUERY_TYPE_OCCLUSION, QUERY_TYPE_COUNT } querytype_t;
+
+typedef enum { SAMPLER_RANGE_FULL = 0, SAMPLER_RANGE_NARROW = 1 } samplerrange_t;
+
+typedef enum { SAMPLE_LOCATION_COSITED, SAMPLE_LOCATION_MIDPOINT } samplelocation_t;
+
+typedef enum {
+	SAMPLER_MODEL_CONVERSION_RGB_IDENTITY,
+	SAMPLER_MODEL_CONVERSION_YCBCR_IDENTITY,
+	SAMPLER_MODEL_CONVERSION_YCBCR_709,
+	SAMPLER_MODEL_CONVERSION_YCBCR_601,
+	SAMPLER_MODEL_CONVERSION_YCBCR_2020,
+} samplermodelconversion_t;
+
+typedef enum {
+	DESCRIPTOR_UPDATE_FREQ_NONE,
+	DESCRIPTOR_UPDATE_FREQ_PER_FRAME,
+	DESCRIPTOR_UPDATE_FREQ_PER_BATCH,
+	DESCRIPTOR_UPDATE_FREQ_PER_DRAW,
+	DESCRIPTOR_UPDATE_FREQ_COUNT,
+} descriptorupdatefreq_t;
+
+typedef enum {
+	shader_target_5_1,
+	shader_target_6_0,
+	shader_target_6_1,
+	shader_target_6_2,
+	shader_target_6_3,    //required for Raytracing
+	shader_target_6_4,    //required for VRS
+} shadertarget_t;
+
+typedef enum {
+	WAVE_OPS_SUPPORT_FLAG_NONE = 0x0,
+	WAVE_OPS_SUPPORT_FLAG_BASIC_BIT = 0x00000001,
+	WAVE_OPS_SUPPORT_FLAG_VOTE_BIT = 0x00000002,
+	WAVE_OPS_SUPPORT_FLAG_ARITHMETIC_BIT = 0x00000004,
+	WAVE_OPS_SUPPORT_FLAG_BALLOT_BIT = 0x00000008,
+	WAVE_OPS_SUPPORT_FLAG_SHUFFLE_BIT = 0x00000010,
+	WAVE_OPS_SUPPORT_FLAG_SHUFFLE_RELATIVE_BIT = 0x00000020,
+	WAVE_OPS_SUPPORT_FLAG_CLUSTERED_BIT = 0x00000040,
+	WAVE_OPS_SUPPORT_FLAG_QUAD_BIT = 0x00000080,
+	WAVE_OPS_SUPPORT_FLAG_PARTITIONED_BIT_NV = 0x00000100,
+	WAVE_OPS_SUPPORT_FLAG_ALL = 0x7FFFFFFF
+} waveopssupportflags_t;
+
+typedef enum { GPU_MODE_SINGLE, GPU_MODE_LINKED, GPU_MODE_UNLINKED } gpumode_t;
+
+typedef struct buffer_s buffer_t;
+typedef struct texture_s texture_t;
+typedef struct rendertarget_s rendertarget_t;
+typedef struct shader_s shader_t;
+typedef struct descidxmap_s descidxmap_t;
+typedef struct accelstruct_s accelstruct_t;
+typedef struct queue_s queue_t;
+typedef struct raytracing_s raytracing_t;
+typedef struct renderercontext_s renderercontext_t;
+typedef struct renderer_s renderer_t;
 
 /* Resource bariers */
-
 struct barrier_s {
 	resourcestate_t currentstate;
 	resourcestate_t newstate;
@@ -440,8 +485,6 @@ typedef struct { rendertarget_t* rt; struct barrier_s; struct subresourcebarrier
 typedef struct { uint64_t offset; uint64_t size; } range_t;
 typedef struct { uint32_t offset; uint32_t size; } range32_t;
 
-typedef enum { QUERY_TYPE_TIMESTAMP = 0, QUERY_TYPE_PIPELINE_STATS, QUERY_TYPE_OCCLUSION,  QUERY_TYPE_COUNT } querytype_t;
-
 typedef struct {
 	querytype_t type;
 	uint32_t  querycount;
@@ -455,22 +498,10 @@ typedef struct {
 	struct {
 		VkQueryPool querypool;
 		VkQueryType type;
-	} vulkan;
+	} vk;
 #endif
 	uint32_t count;
 } querypool_t;
-
-typedef enum { SAMPLER_RANGE_FULL, SAMPLER_RANGE_NARROW } samplerrange_t;
-
-typedef enum { SAMPLE_LOCATION_COSITED, SAMPLE_LOCATION_MIDPOINT } samplelocation_t;
-
-typedef enum {
-	SAMPLER_MODEL_CONVERSION_RGB_IDENTITY,
-	SAMPLER_MODEL_CONVERSION_YCBCR_IDENTITY,
-	SAMPLER_MODEL_CONVERSION_YCBCR_709,
-	SAMPLER_MODEL_CONVERSION_YCBCR_601,
-	SAMPLER_MODEL_CONVERSION_YCBCR_2020,
-} samplermodelconversion_t;
 
 // Data structure holding necessary info to create a Buffer
 typedef struct {
@@ -501,9 +532,9 @@ typedef struct ALIGNED(buffer_s, 64) {
 			VkBuffer buffer;					// Native handle of the underlying resource
 			VkBufferView storagetexelview;		// Buffer view
 			VkBufferView uniformtexelview;
-			struct VmaAllocation_T* allocation;	// Contains resource allocation info such as parent heap, offset in heap
+			struct VmaAllocation_T* alloc;		// Contains resource allocation info such as parent heap, offset in heap
 			uint64_t offset;
-		} vulkan;
+		} vk;
 #endif
 	uint64_t size : 32;
 	uint64_t descriptors : 20;
@@ -546,7 +577,7 @@ typedef struct {
 			void* alloc;									// Allocation and resource for this tile
 			VkSparseImageMemoryBind imagemembind;			// Sparse image memory bind for this page
 			VkDeviceSize size;								// Byte size for this page
-		} vulkan;
+		} vk;
 #endif
 } virtualtexpage_t;
 
@@ -557,10 +588,10 @@ typedef struct {
 			VkSparseImageMemoryBind* sparseimagemembinds;	// Sparse image memory bindings of all memory-backed virtual tables
 			VkSparseMemoryBind* opaquemembinds;				// Sparse opaque memory bindings for the mip tail (if present)
 			void* opaquemembindalloc;						// GPU allocations for opaque memory binds (mip tail)
-			void* pendingdeletedallocs;					// Pending allocation deletions
+			void* pendingdeletedallocs;						// Pending allocation deletions
 			uint32_t sparsememtypebits;						// Memory type bits for sparse texture's memory
 			uint32_t opaquemembindscount;					// Number of opaque memory binds
-		} vulkan;
+		} vk;
 #endif
 	virtualtexpage_t* pages;								// Virtual Texture members
 	buffer_t* pendingdeletedbufs;							// Pending intermediate buffer deletions
@@ -590,7 +621,7 @@ typedef struct ALIGNED(texture_s, 64) {
 				struct VmaAllocation_T* alloc;				// Contains resource allocation info such as parent heap, offset in heap
 				VkDeviceMemory devicemem;
 			};
-		} vulkan;
+		} vk;
 #endif
 	};
 	virtualtexture_t* vt;
@@ -619,9 +650,9 @@ typedef struct {
 	samplecount_t samplecount;		// MSAA
 	TinyImageFormat format;			// Internal image format
 	resourcestate_t state;			// What state will the texture get created in
-	clearvalue_t clearvalue;		// Optimized clear value (recommended to use this same value when clearing the rendertarget)
+	clearvalue_t clearval;			// Optimized clear value (recommended to use this same value when clearing the rendertarget)
 	uint32_t samplequality;			// The image quality level. The higher the quality, the lower the performance. The valid range is between zero and the value appropriate for samplecount
-	descriptortype_t descriptors;		// Descriptor creation
+	descriptortype_t descriptors;	// Descriptor creation
 	const void* nativehandle;
 	const char* name;				// Debug name used in gpu profile
 	uint32_t* sharednodeindices;	// GPU indices to share this texture
@@ -637,7 +668,7 @@ typedef struct ALIGNED(rendertarget_s, 64) {
 			VkImageView   descriptor;
 			VkImageView*  slicedescriptors;
 			uint32_t      id;
-		} vulkan;
+		} vk;
 #endif
 	};
 #if defined(USE_MSAA_RESOLVE_ATTACHMENTS)
@@ -681,17 +712,17 @@ typedef struct {
 	float minLOD;
 	float maxLOD;
 	float maxanisotropy;
-	comparemode_t comparefunc;
+	comparemode_t compareop;
 #if defined(VULKAN)
 	struct {
 		TinyImageFormat format;
 		samplermodelconversion_t model;
-		range_t range;
+		samplerrange_t range;
 		samplelocation_t chromaoffsetX;
 		samplelocation_t chromaoffsetY;
 		filtermode_t chromafilter;
 		bool forceexplicitreconstruction;
-	} vulkan;
+	} vk;
 #endif
 } samplerdesc_t;
 
@@ -702,37 +733,29 @@ typedef struct ALIGNED(sampler_s, 16) {
 			VkSampler sampler;
 			VkSamplerYcbcrConversion ycbcrconversion;
 			VkSamplerYcbcrConversionInfo ycbcrconversioninfo;
-		} vulkan;
+		} vk;
 #endif
 	};
 } sampler_t;
 TC_COMPILE_ASSERT(sizeof(sampler_t) <= 8 * sizeof(uint64_t));
 
-typedef enum {
-	DESCRIPTOR_UPDATE_FREQ_NONE = 0,
-	DESCRIPTOR_UPDATE_FREQ_PER_FRAME,
-	DESCRIPTOR_UPDATE_FREQ_PER_BATCH,
-	DESCRIPTOR_UPDATE_FREQ_PER_DRAW,
-	DESCRIPTOR_UPDATE_FREQ_COUNT,
-} descriptorupdatefreq_t;
-
 // Data structure holding the layout for a descriptor
 typedef struct ALIGNED(descriptorinfo_s, 16) {
 	const char* name;
-	uint32_t    type;
-	uint32_t    dim : 4;
-	uint32_t    rootdescriptor : 1;
-	uint32_t    staticsampler : 1;
-	uint32_t    updatefreq : 3;
-	uint32_t    size;
-	uint32_t    handleindex;
+	uint32_t type;
+	uint32_t dim : 4;
+	uint32_t rootdescriptor : 1;
+	uint32_t staticsampler : 1;
+	uint32_t updatefreq : 3;
+	uint32_t size;
+	uint32_t handleindex;
 	union {
 #if defined(VULKAN)
 		struct {
 			uint32_t type;
 			uint32_t reg : 20;
 			uint32_t stages : 8;
-		} vulkan;
+		} vk;
 #endif
 	};
 } descriptorinfo_t;
@@ -768,7 +791,7 @@ typedef struct ALIGNED(rootsignature_s, 64) {
 			uint8_t poolsizecount[DESCRIPTOR_UPDATE_FREQ_COUNT];
 			VkDescriptorPool emptydescriptorpool[DESCRIPTOR_UPDATE_FREQ_COUNT];
 			VkDescriptorSet emptydescriptorset[DESCRIPTOR_UPDATE_FREQ_COUNT];
-		} vulkan;
+		} vk;
 #endif
 	};
 } rootsignature_t;
@@ -817,7 +840,7 @@ typedef struct ALIGNED(descriptorset_s, 64) {
 			uint8_t updatefreq;
 			uint8_t nodeidx;
 			uint8_t padA;
-		} vulkan;
+		} vk;
 #endif
 	};
 } descset_t;
@@ -850,7 +873,7 @@ typedef struct ALIGNED(cmd_s, 64) {
 			cmdpool_t* cmdpool;
 			uint32_t nodeidx : 4;
 			uint32_t type : 3;
-		} vulkan;
+		} vk;
 #endif
 	};
 	renderer_t* renderer;
@@ -870,7 +893,7 @@ typedef struct {
 			uint32_t padA;
 			uint64_t padB;
 			uint64_t padC;
-		} vulkan;
+		} vk;
 #endif
 	};
 } fence_t;
@@ -886,7 +909,7 @@ typedef struct {
 			uint32_t padA;
 			uint64_t padB;
 			uint64_t padC;
-		} vulkan;
+		} vk;
 #endif
 	};
 } semaphore_t;
@@ -911,16 +934,14 @@ typedef struct queue_s {
 			uint32_t queuefamilyindex : 5;
 			uint32_t queueindex : 5;
 			uint32_t gpumode : 3;
-		} vulkan;
+		} vk;
 #endif
 	};
 	uint32_t type : 3;
 	uint32_t nodeidx : 4;
 } queue_t;
 
-
 /* Shader reflection */
-
 typedef struct {
 	const char* name;	// resource name
 	uint32_t size;		// The size of the attribute
@@ -1017,7 +1038,7 @@ typedef struct shader_s {
 			VkShaderModule* shadermodules;
 			char* entrynames;
 			VkSpecializationInfo* specializationinfo;
-		} vulkan;
+		} vk;
 #endif
 	};
 	pipelinereflection_t* reflection;
@@ -1142,7 +1163,7 @@ typedef struct {
 #if defined(VULKAN)
 	struct {
 		VkPipelineCache cache;
-	} vulkan;
+	} vk;
 #endif
 } pipelinecache_t;
 
@@ -1167,7 +1188,7 @@ typedef struct ALIGNED(pipeline_s, 64) {
 			pipelinetype_t type;
 			uint32_t shaderstagecount;
 			const char* shaderstagenames;
-		} vulkan;
+		} vk;
 #endif
 	};
 } pipeline_t;
@@ -1183,7 +1204,7 @@ typedef struct {
 	uint32_t width;					// Width of the swapchain
 	uint32_t height;				// Height of the swapchain
 	TinyImageFormat colorformat;	// Color format of the swapchain
-	clearvalue_t colorclearvalue;	// Clear value
+	clearvalue_t colorclearval;		// Clear value
     swapchaincreationflags_t flags;	// Swapchain creation flags
 	bool vsync;						// Set whether swap chain will be presented using vsync
 	bool useflipswapeffect;			// We can toggle to using FLIP model if app desires.
@@ -1199,22 +1220,11 @@ typedef struct {
 			swapchaindesc_t* desc;
 			uint32_t presentqueuefamilyindex : 5;
 			uint32_t padA;
-		} vulkan;
+		} vk;
 #endif
 	uint32_t imagecount : 3;
 	uint32_t vsync : 1;
 } swapchain_t;
-
-typedef enum {
-	shader_target_5_1,
-	shader_target_6_0,
-	shader_target_6_1,
-	shader_target_6_2,
-	shader_target_6_3,    //required for Raytracing
-	shader_target_6_4,    //required for VRS
-} shadertarget_t;
-
-typedef enum { GPU_MODE_SINGLE, GPU_MODE_LINKED, GPU_MODE_UNLINKED } gpumode_t;
 
 typedef struct {
 	uint32_t numsettings;
@@ -1233,7 +1243,7 @@ typedef struct {
 			uint32_t instanceextensioncount;
 			uint32_t deviceextensioncount;
 			bool requestallavailablequeues;	// Flag to specify whether to request all queues from the gpu or just one of each type. This will affect memory usage - Around 200 MB more used if all queues are requested
-		} vulkan;
+		} vk;
 #endif
 	shadertarget_t shadertarget;
 	gpumode_t gpumode;
@@ -1259,20 +1269,6 @@ typedef struct {
 	bool canshaderwriteto[TinyImageFormat_Count];
 	bool canrtwriteto[TinyImageFormat_Count];
 } gpucaps_t;
-
-typedef enum {
-	WAVE_OPS_SUPPORT_FLAG_NONE = 0x0,
-	WAVE_OPS_SUPPORT_FLAG_BASIC_BIT = 0x00000001,
-	WAVE_OPS_SUPPORT_FLAG_VOTE_BIT = 0x00000002,
-	WAVE_OPS_SUPPORT_FLAG_ARITHMETIC_BIT = 0x00000004,
-	WAVE_OPS_SUPPORT_FLAG_BALLOT_BIT = 0x00000008,
-	WAVE_OPS_SUPPORT_FLAG_SHUFFLE_BIT = 0x00000010,
-	WAVE_OPS_SUPPORT_FLAG_SHUFFLE_RELATIVE_BIT = 0x00000020,
-	WAVE_OPS_SUPPORT_FLAG_CLUSTERED_BIT = 0x00000040,
-	WAVE_OPS_SUPPORT_FLAG_QUAD_BIT = 0x00000080,
-	WAVE_OPS_SUPPORT_FLAG_PARTITIONED_BIT_NV = 0x00000100,
-	WAVE_OPS_SUPPORT_FLAG_ALL = 0x7FFFFFFF
-} waveopssupportflags_t;
 
 typedef struct {
 	uint64_t VRAM;
@@ -1347,7 +1343,7 @@ typedef struct ALIGNED(renderer_s, 64) {
 				};
 				uint8_t queuefamilyindices[3];
 			};
-		} vulkan;
+		} vk;
 #endif
 	struct nulldescriptors_s* nulldescriptors;
 	char* name;
@@ -1367,7 +1363,7 @@ typedef struct {
 		struct {
 			VkPhysicalDevice gpu;
 			VkPhysicalDeviceProperties2 gpuprops;
-		} vulkan;
+		} vk;
 #endif
 	gpusettings_t settings;
 } gpuinfo_t;
@@ -1382,7 +1378,7 @@ typedef struct renderercontext_s {
 #else
 			VkDebugReportCallbackEXT debugreport;
 #endif
-		} vulkan;
+		} vk;
 #endif
 	gpuinfo_t gpus[MAX_MULTIPLE_GPUS];
 	uint32_t gpucount;

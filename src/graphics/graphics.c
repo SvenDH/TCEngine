@@ -156,9 +156,7 @@ static void exit_rendererapi(renderer_t* renderer, const renderertype_t api)
 
 void init_renderer(const char* appname, const rendererdesc_t* desc, renderer_t* renderer)
 {
-	TC_ASSERT(renderer && *renderer == NULL);
-	TC_ASSERT(desc);
-
+	TC_ASSERT(renderer && desc);
 	init_rendererapi(appname, desc, renderer, selected_api);
 	//if (desc->extendedsettings && *renderer)
 	//	setextendedsettings(desc->extendedsettings, (*renderer)->activegpusettings);
