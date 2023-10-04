@@ -1190,7 +1190,7 @@ typedef struct {
 } swapchaindesc_t;
 
 typedef struct {
-	rendertarget_t* rts;			// Render targets created from the swapchain back buffers
+	rendertarget_t** rts;			// Render targets created from the swapchain back buffers
 #if defined(VULKAN)
 		struct {
 			VkQueue presentqueue;	// Present queue if one exists (queuePresent will use this queue if the hardware has a dedicated present queue)
@@ -1202,7 +1202,7 @@ typedef struct {
 		} vulkan;
 #endif
 	uint32_t imagecount : 3;
-	uint32_t enablevsync : 1;
+	uint32_t vsync : 1;
 } swapchain_t;
 
 typedef enum {

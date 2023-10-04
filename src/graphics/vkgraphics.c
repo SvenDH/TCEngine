@@ -2302,7 +2302,7 @@ void vk_remove_cmds(renderer_t* renderer, uint32_t count, cmd_t* cmds)
 	}
 }
 
-void vk_toggle_vsync(renderer_t* renderer, swapchain_t** swapchain)
+void vk_toggle_vsync(renderer_t* renderer, swapchain_t* swapchain)
 {
 	queue_t queue = { 0 };
 	queue.vulkan.queuefamilyindex = swapchain->vulkan.presentqueuefamilyindex;
@@ -2316,7 +2316,7 @@ void vk_toggle_vsync(renderer_t* renderer, swapchain_t** swapchain)
 	add_swapchain(renderer, &desc, swapchain);
 }
 
-void vk_add_swapchain(renderer_t* renderer, const swapchaindesc_t* desc, swapchain_t** swapchain)
+void vk_add_swapchain(renderer_t* renderer, const swapchaindesc_t* desc, swapchain_t* swapchain)
 {
 	TC_ASSERT(renderer && desc && swapchain);
 	TC_ASSERT(desc->imagecount <= MAX_SWAPCHAIN_IMAGES);
@@ -2339,8 +2339,7 @@ void vk_add_swapchain(renderer_t* renderer, const swapchaindesc_t* desc, swapcha
 		TRACE(LOG_WARNING, "Changed requested SwapChain images {%u} to minimum required SwapChain images {%u}", desc->imagecount, caps.minImageCount);
 		((swapchaindesc_t*)desc)->imagecount = caps.minImageCount;
 	}
-	// Surface format
-	// Select a surface format, depending on whether HDR is available.
+	// Surface format. Select a surface format, depending on whether HDR is available.
 	VkSurfaceFormatKHR surface_format = { 0 };
 	surface_format.format = VK_FORMAT_UNDEFINED;
 	uint32_t surfacefmtcount = 0;
@@ -2382,7 +2381,6 @@ void vk_add_swapchain(renderer_t* renderer, const swapchaindesc_t* desc, swapcha
 	CHECK_VKRESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(renderer->vulkan.activegpu, surface, &swapChainImageCount, NULL));
 	modes = (VkPresentModeKHR*)alloca(swapChainImageCount * sizeof(*modes));		// Allocate and get present modes
 	CHECK_VKRESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(renderer->vulkan.activegpu, surface, &swapChainImageCount, modes));
-
 	const uint32_t preferredmodecount = 4;
 	VkPresentModeKHR preferredModes[] = { VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_FIFO_RELAXED_KHR, VK_PRESENT_MODE_FIFO_KHR };
 	uint32_t start = desc->vsync ? 2 : 0;
@@ -2411,8 +2409,7 @@ void vk_add_swapchain(renderer_t* renderer, const swapchaindesc_t* desc, swapcha
 	queuefamprops = (VkQueueFamilyProperties*)alloca(queuefampropscount * sizeof(VkQueueFamilyProperties));
 	vkGetPhysicalDeviceQueueFamilyProperties(renderer->vulkan.activegpu, &queuefampropscount, queuefamprops);
 
-	// Check if hardware provides dedicated present queue
-	if (queuefampropscount) {
+	if (queuefampropscount) {			// Check if hardware provides dedicated present queue
 		for (uint32_t i = 0; i < queuefampropscount; i++) {
 			VkBool32 supports_present = VK_FALSE;
 			VkResult res = vkGetPhysicalDeviceSurfaceSupportKHR(renderer->vulkan.activegpu, i, surface, &supports_present);
@@ -2465,7 +2462,6 @@ void vk_add_swapchain(renderer_t* renderer, const swapchaindesc_t* desc, swapcha
 			break;
 		}
 	}
-
 	TC_ASSERT(composite_alpha != VK_COMPOSITE_ALPHA_FLAG_BITS_MAX_ENUM_KHR);
 
 	VkSwapchainKHR vkSwapchain;
@@ -2489,20 +2485,16 @@ void vk_add_swapchain(renderer_t* renderer, const swapchaindesc_t* desc, swapcha
 
 	((swapchaindesc_t*)desc)->colorformat = TinyImageFormat_FromVkFormat((TinyImageFormat_VkFormat)surface_format.format);
 
-	// Create rendertargets from swapchain
-	uint32_t imageCount = 0;
-	CHECK_VKRESULT(vkGetSwapchainImagesKHR(renderer->vulkan.device, vkSwapchain, &imageCount, NULL));
-
-	TC_ASSERT(imageCount >= desc->imagecount);
-
-	VkImage* images = (VkImage*)alloca(imageCount * sizeof(VkImage));
-
-	CHECK_VKRESULT(vkGetSwapchainImagesKHR(renderer->vulkan.device, vkSwapchain, &imageCount, images));
-
-	SwapChain* pSwapChain = (swapchain_t*)tc_calloc(1, sizeof(SwapChain) + imageCount * sizeof(RenderTarget*) + sizeof(SwapChainDesc));
-	pSwapChain->rendertargets = (rendertarget_t**)(pSwapChain + 1);
-	pSwapChain->vulkan.desc = (swapchaindesc_t*)(pSwapChain->rendertargets + imageCount);
-	TC_ASSERT(pSwapChain);
+	
+	uint32_t numimages = 0;		// Create rendertargets from swapchain
+	CHECK_VKRESULT(vkGetSwapchainImagesKHR(renderer->vulkan.device, vkSwapchain, &numimages, NULL));
+	TC_ASSERT(numimages >= desc->imagecount);
+	VkImage* images = (VkImage*)alloca(numimages * sizeof(VkImage));
+	CHECK_VKRESULT(vkGetSwapchainImagesKHR(renderer->vulkan.device, vkSwapchain, &numimages, images));
+	uint8_t* mem = (uint8_t*)tc_calloc(1, numimages * sizeof(rendertarget_t*) + sizeof(swapchaindesc_t));
+	TC_ASSERT(mem);
+	swapchain->rts = (rendertarget_t**)mem;
+	swapchain->vulkan.desc = (swapchaindesc_t*)(swapchain->rts + numimages);
 
 	rendertargetdesc_t rtdesc = { 0 };
 	rtdesc.width = desc->width;
@@ -2510,71 +2502,50 @@ void vk_add_swapchain(renderer_t* renderer, const swapchaindesc_t* desc, swapcha
 	rtdesc.depth = 1;
 	rtdesc.arraysize = 1;
 	rtdesc.format = desc->colorformat;
-	rtdesc.mClearValue = desc->colorclearvalue;
-	rtdesc.mSampleCount = SAMPLE_COUNT_1;
-	rtdesc.mSampleQuality = 0;
-	rtdesc.mStartState = RESOURCE_STATE_PRESENT;
-	rtdesc.mNodeIndex = renderer->unlinkedrendererindex;
+	rtdesc.clearvalue = desc->colorclearvalue;
+	rtdesc.samplecount = SAMPLE_COUNT_1;
+	rtdesc.samplequality = 0;
+	rtdesc.state = RESOURCE_STATE_PRESENT;
+	rtdesc.nodeidx = renderer->unlinkedrendererindex;
 
 	char buffer[32] = { 0 };
-	// Populate the vk_image field and add the Vulkan texture objects
-	for (uint32_t i = 0; i < imageCount; ++i)
-	{
+	for (uint32_t i = 0; i < numimages; ++i) {	// Populate the vk_image field and add the Vulkan texture objects
 		sprintf(buffer, "Swapchain RT[%u]", i);
-		descColor.pName = buffer;
-		descColor.pNativeHandle = (void*)images[i];
-		addRenderTarget(renderer, &descColor, &pSwapChain->rendertargets[i]);
+		rtdesc.name = buffer;
+		rtdesc.nativehandle = (void*)images[i];
+		add_rendertarget(renderer, &rtdesc, &swapchain->rts[i]);
 	}
-	/************************************************************************/
-	/************************************************************************/
-	*pSwapChain->vulkan.desc = *desc;
-	pSwapChain->mEnableVsync = desc->mEnableVsync;
-	pSwapChain->mImageCount = imageCount;
-	pSwapChain->vulkan.pVkSurface = surface;
-	pSwapChain->vulkan.mPresentQueueFamilyIndex = finalPresentQueueFamilyIndex;
-	pSwapChain->vulkan.pPresentQueue = presentQueue;
-	pSwapChain->vulkan.pSwapChain = vkSwapchain;
-
-	*ppSwapChain = pSwapChain;
+	*swapchain->vulkan.desc = *desc;
+	swapchain->vsync = desc->vsync;
+	swapchain->imagecount = numimages;
+	swapchain->vulkan.surface = surface;
+	swapchain->vulkan.presentqueuefamilyindex = finalPresentQueueFamilyIndex;
+	swapchain->vulkan.presentqueue = presentQueue;
+	swapchain->vulkan.swapchain = vkSwapchain;
 }
 
-void vk_removeSwapChain(renderer_t* renderer, SwapChain* pSwapChain)
+void vk_removeSwapChain(renderer_t* renderer, swapchain_t* swapchain)
 {
-	TC_ASSERT(renderer);
-	TC_ASSERT(pSwapChain);
+	TC_ASSERT(renderer && swapchain);
+	for (uint32_t i = 0; i < swapchain->imagecount; i++)
+		removeRenderTarget(renderer, swapchain->rts[i]);
 
-#if defined(QUEST_VR)
-    hook_remove_swap_chain(renderer, pSwapChain);
-    return;
-#endif
-
-	for (uint32_t i = 0; i < pSwapChain->mImageCount; ++i)
-	{
-		removeRenderTarget(renderer, pSwapChain->rendertargets[i]);
-	}
-
-	vkDestroySwapchainKHR(renderer->vulkan.device, pSwapChain->vulkan.pSwapChain, &alloccbs);
-	vkDestroySurfaceKHR(renderer->vulkan.instance, pSwapChain->vulkan.pVkSurface, &alloccbs);
-
-	tc_free(pSwapChain);
+	vkDestroySwapchainKHR(renderer->vulkan.device, swapchain->vulkan.swapchain, &alloccbs);
+	vkDestroySurfaceKHR(renderer->vulkan.instance, swapchain->vulkan.surface, &alloccbs);
+	tc_free(swapchain->rts);
 }
 
-void vk_add_buffer(renderer_t* renderer, const BufferDesc* desc, buffer_t** ppBuffer)
+void vk_add_buffer(renderer_t* renderer, const bufferdesc_t* desc, buffer_t* buffer)
 {
-	TC_ASSERT(renderer);
-	TC_ASSERT(desc);
-	TC_ASSERT(desc->mSize > 0);
+	TC_ASSERT(renderer && desc);
+	TC_ASSERT(desc->size > 0);
 	TC_ASSERT(VK_NULL_HANDLE != renderer->vulkan.device);
-	TC_ASSERT(renderer->gpumode != GPU_MODE_UNLINKED || desc->mNodeIndex == renderer->mUnlinkedRendererIndex);
-
-	buffer_t* pBuffer = (buffer_t*)tc_calloc_memalign(1, alignof(Buffer), sizeof(Buffer));
-	TC_ASSERT(ppBuffer);
-
-	uint64_t allocationSize = desc->mSize;
+	TC_ASSERT(renderer->gpumode != GPU_MODE_UNLINKED || desc->nodeindex == renderer->unlinkedrendererindex);
+	memset(buffer, 0, sizeof(buffer_t));
+	uint64_t size = desc->size;
 	// Align the buffer size to multiples of the dynamic uniform buffer minimum size
-	if (desc->descriptors & DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-	{
-		uint64_t minAlignment = renderer->activegpusettings->mUniformBufferAlignment;
+	if (desc->descriptors & DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+		uint64_t minAlignment = renderer->activegpusettings->uniformbufalignment;
 		allocationSize = round_up_64(allocationSize, minAlignment);
 	}
 
@@ -6815,7 +6786,7 @@ static VTReadbackBufOffsets vtGetReadbackBufOffsets(uint32_t* buffer, uint32_t r
 	offsets.mTotalSize = (uint)((offsets.pRemovePages - offsets.pAlivePageCount) + pageCount) * sizeof(uint);
 	return offsets;
 }
-static uint32_t vtGetReadbackBufSize(uint32_t pageCount, uint32_t imageCount)
+static uint32_t vtGetReadbackBufSize(uint32_t pageCount, uint32_t numimages)
 {
 	VTReadbackBufOffsets offsets = vtGetReadbackBufOffsets(NULL, 0, pageCount, 0);
 	return offsets.mTotalSize;

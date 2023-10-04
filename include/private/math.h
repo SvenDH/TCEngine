@@ -33,6 +33,11 @@ inline int log2_32(uint32_t value) {
 	return log2_tab32[(uint32_t)(value * 0x07C4ACDD) >> 27];
 }
 
+inline double clamp(double d, double min, double max) {
+  const double t = d < min ? min : d;
+  return t > max ? max : t;
+}
+
 inline bool is_power_of_2(uint32_t val) {
 	return val > 0 && (val & (val - 1)) == 0;
 }
