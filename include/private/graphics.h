@@ -37,6 +37,7 @@ enum {
 	MAX_INSTANCE_EXTENSIONS = 64,
 	MAX_DEVICE_EXTENSIONS = 64,
 	MAX_SWAPCHAIN_IMAGES = 3,
+	MAX_RESOURCE_NAME_LENGTH = 256
 };
 
 typedef enum {
@@ -450,6 +451,23 @@ typedef enum {
 
 typedef enum { GPU_MODE_SINGLE, GPU_MODE_LINKED, GPU_MODE_UNLINKED } gpumode_t;
 
+typedef enum {
+	ROOT_SIGNATURE_FLAG_NONE = 0,			// Default flag
+	ROOT_SIGNATURE_FLAG_LOCAL_BIT = 0x1,	// Local root signature used mainly in raytracing shaders
+} rootsignatureflags_t;
+
+typedef enum {
+	MARKER_TYPE_DEFAULT = 0x0,
+	MARKER_TYPE_IN = 0x1,
+	MARKER_TYPE_OUT = 0x2,
+	MARKER_TYPE_IN_OUT = 0x3,
+} markertype_t;
+
+typedef enum { FENCE_COMPLETE, FENCE_INCOMPLETE, FENCE_NOTSUBMITTED } fencestatus_t;
+
+typedef enum { VERTEX_ATTRIB_RATE_VERTEX, VERTEX_ATTRIB_RATE_INSTANCE, VERTEX_ATTRIB_RATE_COUNT } vertexattribrate_t;
+
+
 typedef struct buffer_s buffer_t;
 typedef struct texture_s texture_t;
 typedef struct rendertarget_s rendertarget_t;
@@ -587,8 +605,8 @@ typedef struct {
 			void* pool;										// GPU memory pool for tiles
 			VkSparseImageMemoryBind* sparseimagemembinds;	// Sparse image memory bindings of all memory-backed virtual tables
 			VkSparseMemoryBind* opaquemembinds;				// Sparse opaque memory bindings for the mip tail (if present)
-			void* opaquemembindalloc;						// GPU allocations for opaque memory binds (mip tail)
-			void* pendingdeletedallocs;						// Pending allocation deletions
+			void** opaquemembindalloc;						// GPU allocations for opaque memory binds (mip tail)
+			void** pendingdeletedallocs;					// Pending allocation deletions
 			uint32_t sparsememtypebits;						// Memory type bits for sparse texture's memory
 			uint32_t opaquemembindscount;					// Number of opaque memory binds
 		} vk;
@@ -698,7 +716,7 @@ typedef struct {
 	storeop_t storecolor[MAX_RENDER_TARGET_ATTACHMENTS];
 	storeop_t storedepth;
 	storeop_t storestencil;
-} loadactionsdesc_t;
+} loadopsdesc_t;
 
 typedef struct {
 	filtermode_t minfilter;
@@ -740,7 +758,7 @@ typedef struct ALIGNED(sampler_s, 16) {
 TC_COMPILE_ASSERT(sizeof(sampler_t) <= 8 * sizeof(uint64_t));
 
 // Data structure holding the layout for a descriptor
-typedef struct ALIGNED(descriptorinfo_s, 16) {
+typedef struct ALIGNED(descinfo_s, 16) {
 	const char* name;
 	uint32_t type;
 	uint32_t dim : 4;
@@ -758,20 +776,15 @@ typedef struct ALIGNED(descriptorinfo_s, 16) {
 		} vk;
 #endif
 	};
-} descriptorinfo_t;
-TC_COMPILE_ASSERT(sizeof(descriptorinfo_t) == 4 * sizeof(uint64_t));
-
-typedef enum {
-	ROOT_SIGNATURE_FLAG_NONE = 0,			// Default flag
-	ROOT_SIGNATURE_FLAG_LOCAL_BIT = 0x1,	// Local root signature used mainly in raytracing shaders
-} rootsignatureflags_t;
+} descinfo_t;
+TC_COMPILE_ASSERT(sizeof(descinfo_t) == 4 * sizeof(uint64_t));
 
 typedef struct {
-	shader_t* shaders;
+	shader_t** shaders;
 	uint32_t shadercount;
 	uint32_t maxbindlesstextures;
-	const char* staticsamplernames;
-	sampler_t* staticsamplers;
+	const char** staticsamplernames;
+	sampler_t** staticsamplers;
 	uint32_t staticsamplercount;
 	rootsignatureflags_t flags;
 } rootsignaturedesc_t;
@@ -779,7 +792,7 @@ typedef struct {
 typedef struct ALIGNED(rootsignature_s, 64) {
 	uint32_t descriptorcount;						// Number of descriptors declared in the root signature layout
 	pipelinetype_t pipelinetype;					// Graphics or Compute
-	descriptorinfo_t* descriptors;					// Array of all descriptors declared in the root signature layout
+	descinfo_t* descriptors;					// Array of all descriptors declared in the root signature layout
 	descidxmap_t* descnametoidxmap;					// Translates hash of descriptor name to descriptor index in pDescriptors array
 	union {
 #if defined(VULKAN)
@@ -802,7 +815,7 @@ typedef struct {
 	uint32_t count : 31;							// Number of array entries to update (array size of ppTextures/ppBuffers/...)
 	uint32_t arrayoffset : 20;						// Dst offset into the array descriptor (useful for updating few entries in a large array). Example: to update 6th entry in a bindless texture descriptor, arrayoffset will be 6 and count will be 1)
 	uint32_t index : 10;							// Index in rootSignature->descriptors array - Cache index using getdescriptorindexfromname to avoid using string checks at runtime
-	uint32_t bindbyindex : 1;
+	uint32_t bindbyidx : 1;
 	range32_t* ranges;								// Range to bind (buffer offset, size)
 	bool bindstencilresource : 1;					// Binds stencil only descriptor instead of color/depth
 	union {
@@ -817,12 +830,12 @@ typedef struct {
 			bool bindICB;
 		};
 	};
-	/// Array of resources containing descriptor handles or constant to be used in ring buffer memory - DescriptorRange can hold only one resource type array
+	// Array of resources containing descriptor handles or constant to be used in ring buffer memory - DescriptorRange can hold only one resource type array
 	union {
-		texture_t* textures;						// Array of texture descriptors (srv and uav textures)
-		sampler_t* samplers;						// Array of sampler descriptors
-		buffer_t* buffers;							// Array of buffer descriptors (srv, uav and cbv buffers)
-		accelstruct_t* accelstructs;				// Custom binding (raytracing acceleration structure ...)
+		texture_t** textures;						// Array of texture descriptors (srv and uav textures)
+		sampler_t** samplers;						// Array of sampler descriptors
+		buffer_t** buffers;							// Array of buffer descriptors (srv, uav and cbv buffers)
+		accelstruct_t** accelstructs;				// Custom binding (raytracing acceleration structure ...)
 	};
 } descdata_t;
 
@@ -856,13 +869,6 @@ typedef struct {
 
 typedef struct { cmdpool_t* pool; bool secondary; } cmddesc_t;
 
-typedef enum {
-	MARKER_TYPE_DEFAULT = 0x0,
-	MARKER_TYPE_IN = 0x1,
-	MARKER_TYPE_OUT = 0x2,
-	MARKER_TYPE_IN_OUT = 0x3,
-} markertype_t;
-
 typedef struct ALIGNED(cmd_s, 64) {
 	union {
 #if defined(VULKAN)
@@ -880,8 +886,6 @@ typedef struct ALIGNED(cmd_s, 64) {
 	queue_t* queue;
 } cmd_t;
 TC_COMPILE_ASSERT(sizeof(cmd_t) <= 64 * sizeof(uint64_t));
-
-typedef enum { FENCE_COMPLETE, FENCE_INCOMPLETE, FENCE_NOTSUBMITTED } fencestatus_t;
 
 typedef struct {
 	union {
@@ -969,7 +973,7 @@ typedef struct {
 
 typedef struct {
 	
-	char* pNamePool;			// single large allocation for names to reduce number of allocations
+	char* namepool;				// single large allocation for names to reduce number of allocations
 	vertexinput_t* vertexinputs;
 	shaderresource_t* shaderresources;
 	shadervar_t* variables;
@@ -1036,7 +1040,7 @@ typedef struct shader_s {
 #if defined(VULKAN)
 		struct {
 			VkShaderModule* shadermodules;
-			char* entrynames;
+			char** entrynames;
 			VkSpecializationInfo* specializationinfo;
 		} vk;
 #endif
@@ -1085,8 +1089,6 @@ typedef struct {
 	bool depthclampenable;
 } rasterizerstatedesc_t;
 
-typedef enum { VERTEX_ATTRIB_RATE_VERTEX, VERTEX_ATTRIB_RATE_INSTANCE, VERTEX_ATTRIB_RATE_COUNT } vertexattribrate_t;
-
 typedef struct {
 	shadersemantic_t semantic;
 	uint32_t semanticnamelen;
@@ -1117,8 +1119,8 @@ typedef struct {
 	rootsignature_t* globalrootsignature;
 	shader_t* raygenshader;
 	rootsignature_t* raygenrootsignature;
-	shader_t* missshaders;
-	rootsignature_t* missrootsignatures;
+	shader_t** missshaders;
+	rootsignature_t** missrootsignatures;
 	raytracinghitgroup_t* hitgroups;
 	rootsignature_t* emptyrootsignature;
 	unsigned missshadercount;
@@ -1130,7 +1132,7 @@ typedef struct {
 } raytracingpipelinedesc_t;
 
 typedef struct {
-	shader_t* shaderprogram;
+	shader_t* shader;
 	rootsignature_t* rootsignature;
 	vertexlayout_t* vertexlayout;
 	blendstatedesc_t* blendstate;
@@ -1149,7 +1151,7 @@ typedef struct {
     bool VRfoveatedrendering;
 } graphicspipelinedesc_t;
 
-typedef struct { shader_t* program; rootsignature_t* rootsignature; } computepipelinedesc_t;
+typedef struct { shader_t* shader; rootsignature_t* rootsignature; } computepipelinedesc_t;
 
 typedef enum { PIPELINE_CACHE_FLAG_NONE, PIPELINE_CACHE_FLAG_EXTERNALLY_SYNCHRONIZED } pipelinecacheflags_t;
 
@@ -1186,8 +1188,8 @@ typedef struct ALIGNED(pipeline_s, 64) {
 		struct {
 			VkPipeline pipeline;
 			pipelinetype_t type;
-			uint32_t shaderstagecount;
-			const char* shaderstagenames;
+			uint32_t stagecount;
+			const char** stagenames;
 		} vk;
 #endif
 	};
@@ -1236,9 +1238,9 @@ typedef struct {
 #if defined(VULKAN)
 		struct
 		{
-			const char* instancelayers;
-			const char* instanceextensions;
-			const char* deviceextensions;
+			const char** instancelayers;
+			const char** instanceextensions;
+			const char** deviceextensions;
 			uint32_t instancelayercount;
 			uint32_t instanceextensioncount;
 			uint32_t deviceextensioncount;
@@ -1370,8 +1372,7 @@ typedef struct {
 
 typedef struct renderercontext_s {
 #if defined(VULKAN)
-		struct
-		{
+		struct {
 			VkInstance instance;
 #ifdef ENABLE_DEBUG_UTILS_EXTENSION
 			VkDebugUtilsMessengerEXT debugutilsmessenger;
@@ -1383,7 +1384,6 @@ typedef struct renderercontext_s {
 	gpuinfo_t gpus[MAX_MULTIPLE_GPUS];
 	uint32_t gpucount;
 } renderercontext_t;
-
 
 // Indirect command structure define
 typedef struct {
@@ -1432,10 +1432,10 @@ typedef struct {
 } descriptorsetdesc_t;
 
 typedef struct {
-	cmd_t* cmds;
+	cmd_t** cmds;
 	fence_t* signalfence;
-	semaphore_t* waitsemaphores;
-	semaphore_t* signalsemaphores;
+	semaphore_t** waitsemaphores;
+	semaphore_t** signalsemaphores;
 	uint32_t cmdcount;
 	uint32_t waitsemaphorecount;
 	uint32_t signalsemaphorecount;
@@ -1444,12 +1444,11 @@ typedef struct {
 
 typedef struct {
 	swapchain_t* swapchain;
-	semaphore_t* waitsemaphores;
+	semaphore_t** waitsemaphores;
 	uint32_t waitsemaphorecount;
 	uint8_t index;
 	bool submitdone;
 } queuepresentdesc_t;
-
 
 
 // Queue/fence/swapchain functions
@@ -1501,7 +1500,7 @@ typedef void (*reset_cmdpool_func)(renderer_t* renderer, cmdpool_t* pool);
 
 typedef void (*cmd_begin_func)(cmd_t* cmd);
 typedef void (*cmd_end_func)(cmd_t* cmd);
-typedef void (*cmd_bindrts_func)(cmd_t* cmd, uint32_t count, rendertarget_t* rts, rendertarget_t* depthstencil, const loadactionsdesc_t* loadactions, uint32_t* colorarrayslices, uint32_t* colormipslices, uint32_t deptharrayslice, uint32_t depthmipslice);
+typedef void (*cmd_bindrendertargets_func)(cmd_t* cmd, uint32_t count, rendertarget_t** rts, rendertarget_t* depthstencil, const loadopsdesc_t* loadops, uint32_t* colorarrayslices, uint32_t* colormipslices, uint32_t deptharrayslice, uint32_t depthmipslice);
 typedef void (*cmd_setshadingrate_func)(cmd_t* cmd, shadingrate_t shading_rate, texture_t* tex, shadingratecombiner_t post_rasterizer_rate, shadingratecombiner_t final_rate);
 typedef void (*cmd_setviewport_func)(cmd_t* cmd, float x, float y, float w, float h, float min_depth, float max_depth);
 typedef void (*cmd_setscissor_func)(cmd_t* cmd, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
@@ -1567,3 +1566,11 @@ void renderer_init(const char* app_name, const rendererdesc_t* desc_func, render
 void renderer_exit(renderer_t* renderer);
 
 uint32_t descindexfromname(const rootsignature_t* rootsignature, const char* name);
+
+static inline bool is_rootcbv(const char* name) {
+	char lower[MAX_RESOURCE_NAME_LENGTH] = { 0 };
+	uint32_t len = (uint32_t)strlen(name);
+	for (uint32_t i = 0; i < len; ++i)
+		lower[i] = tolower(name[i]);
+	return strstr(lower, "rootcbv");
+}

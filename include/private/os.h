@@ -60,22 +60,17 @@ typedef struct tc_os_i {
 
     void (*guard_page)(void* ptr, size_t size);
 
-    /* Opens a file and returns the file handle on success or alse TC_INVALID_FILE
-     */
+    /* Opens a file and returns the file handle on success or alse TC_INVALID_FILE */
     tc_fut_t* (*open)(const char* path, int flags);
 
-    /* Reads a number of bytes at offset into a buffer
-     */
+    /* Reads a number of bytes at offset into a buffer */
     tc_fut_t* (*read)(fd_t file, char* buf, uint64_t size, int64_t offset);
 
-    /* Writes a number of bytes from a buffer at an offset
-     */
+    /* Writes a number of bytes from a buffer at an offset */
     tc_fut_t* (*write)(fd_t file, char* buf, uint64_t size, int64_t offset);
 
-    /* Closes the file
-     */
+    /* Closes the file */
     tc_fut_t* (*close)(fd_t file);
-    
 
     tc_fut_t* (*stat)(stat_t* stat, const char* path);
 
@@ -99,15 +94,15 @@ typedef struct tc_os_i {
 
     bool (*chdir)(const char* path);
 
-    uint32_t(*cpu_id)();
+    uint32_t (*cpu_id)();
 
-    uint32_t(*num_cpus)();
+    uint32_t (*num_cpus)();
 
-    tc_thread_t(*create_thread)(tc_thread_f entry, void* data, uint32_t stack_size);
+    tc_thread_t (*create_thread)(tc_thread_f entry, void* data, uint32_t stack_size);
 
-    tc_thread_t(*current_thread)();
+    tc_thread_t (*current_thread)();
 
-    void(*set_thread_affinity)(tc_thread_t thread, uint32_t cpu_num);
+    void (*set_thread_affinity)(tc_thread_t thread, uint32_t cpu_num);
 
 } tc_os_i;
 

@@ -21,6 +21,7 @@ queue_waitidle_func queue_waitidle;
 get_fencestatus_func get_fencestatus;
 wait_for_fences_func wait_for_fences;
 toggle_vsync_func toggle_vsync;
+
 add_rendertarget_func add_rendertarget;
 remove_rendertarget_func remove_rendertarget;
 add_sampler_func add_sampler;
@@ -37,14 +38,16 @@ remove_pipelinecache_func remove_pipelinecache;
 add_descriptorset_func add_descriptorset;
 remove_descriptorset_func remove_descriptorset;
 update_descriptorset_func update_descriptorset;
+
 add_cmdpool_func add_cmdpool;
 remove_cmdpool_func remove_cmdpool;
+reset_cmdpool_func reset_cmdpool;
 add_cmds_func add_cmds;
 remove_cmds_func remove_cmds;
-reset_cmdpool_func reset_cmdpool;
+
 cmd_begin_func cmd_begin;
 cmd_end_func cmd_end;
-cmd_bindrts_func cmd_bindrts;
+cmd_bindrendertargets_func cmd_bindrendertargets;
 cmd_setshadingrate_func cmd_setshadingrate;
 cmd_setviewport_func cmd_setviewport;
 cmd_setscissor_func cmd_setscissor;

@@ -14,6 +14,261 @@
 #define NULL_RECT (rect2){0.0f, 0.0f, 0.0f, 0.0f}
 #define EPSILON 0.0001f
 
+#define QUICKSORT_THRESHOLD 30
+#define SIMPLESORT_THRESHOLD 4
+#define TMP_BUF_STACK_SIZE 256	
+
+#define CONCAT(x, y) CONCAT_IMPL(x,y)
+#define CONCAT_IMPL(x,y) x##y
+
+#define CREATE_TEMP_NUMERIC(type, name) \
+	type CONCAT(name, Buf);				\
+	type* name = & CONCAT(name,Buf)
+#define CREATE_TEMP_GENERIC(type, name)							\
+	ALIGNAS(8) char CONCAT(name, Buf)[TMP_BUF_STACK_SIZE];		\
+	char* name = CONCAT(name, Buf);								\
+	if (memberSize > sizeof(CONCAT(name, Buf)))					\
+		name = tf_malloc(memberSize);							\
+	(void)0
+#define DESTROY_TEMP_NUMERIC(name) ((void)0)
+#define DESTROY_TEMP_GENERIC(name) ((memberSize > sizeof(CONCAT(name, Buf))) ? tf_free(name) : (void)0)
+#define LESS_NUMERIC(pX, pY) (*(pX) < *(pY))
+#define LESS_GENERIC(pX, pY) less((pX), (pY), pUserData)
+
+#define COPY_NUMERIC(pDst, pSrc) (*(pDst) = *(pSrc), (void)0)
+#define COPY_GENERIC(pDst, pSrc) (memcpy(pDst, pSrc, memberSize), (void)0)
+#define COPY_STRUCT(pDst, pSrc) (memcpy(pDst, pSrc, sizeof(*pDst)), (void)0)
+
+#define SWAP(pX, pY, tmp, copy) (	\
+	copy((tmp), (pX)),			\
+	copy((pX), (pY)),			\
+	copy((pY), (tmp)),			\
+	(void)0)
+
+#define PTR_INC_GENERIC(ptr) ((ptr) += memberSize)
+#define PTR_DEC_GENERIC(ptr) ((ptr) -= memberSize)
+#define PTR_ADD_GENERIC(ptr, val) ((ptr) + (val) * memberSize)
+#define PTR_SUB_GENERIC(ptr, val) ((ptr) - (val) * memberSize)
+#define PTR_DIFF_GENERIC(p0, p1) (((p0) - (p1)) / memberSize)
+
+#define PTR_INC_NUMERIC(ptr) (++(ptr))
+#define PTR_DEC_NUMERIC(ptr) (--(ptr))
+#define PTR_ADD_NUMERIC(ptr, val) ((ptr) + (val))
+#define PTR_SUB_NUMERIC(ptr, val) ((ptr) - (val))
+#define PTR_DIFF_NUMERIC(p0, p1) ((p0) - (p1))
+
+/*
+ * Generates definitions for following functions:
+ * 
+ * Interface functions:
+ * 
+ * attrs void sort<type> (type* pData, size_t count)
+ *	regular sort
+ *	if size < QUICKSORT_THRESHOLD 
+ *		use insertion sort
+ *	else
+ *		use quick sort
+ *
+ * attrs void stableSort<type> (type* arr, size_t count)
+ *	stable sort (uses insertion sort)
+ *	NOTE: 2-3 times slower than regular sort for big arrays
+ * 
+ * attrs size_t partition<type> (type* arr, size_t pivot, size_t count)
+ *	partitions array around the pivot(similar to std::nth_element)
+ * 
+ * Implementation functions:
+ *
+ * attrs void simplSort<type> (type* arr, size_t count)
+ *	sort used for small arrays (used in stableSort)
+ * 
+ * attrs type* partitionImpl<type> (type* start, type* end, type* pPivot)
+ *	implementation function for partition
+ * 
+ * attrs void quickSortImpl<type> (type* start, type* end, type* tmp)
+ *	implementation function for sort
+ * 
+ */
+#define DEFINE_SORT_ALGORITHMS_FOR_TYPE(attrs, type, lessFn)																					\
+	DEFINE_SIMPLE_SORT_FUNCTION(attrs, CONCAT(simpleSort, type), type, lessFn)																	\
+	DEFINE_INSERTION_SORT_FUNCTION(attrs, CONCAT(stableSort, type), type, lessFn, CONCAT(simpleSort, type))										\
+	DEFINE_PARTITION_IMPL_FUNCTION(attrs, CONCAT(partitionImpl, type), type, lessFn)															\
+	DEFINE_PARTITION_FUNCTION(attrs, CONCAT(partition, type), type, lessFn, CONCAT(partitionImpl, type))										\
+	DEFINE_QUICK_SORT_IMPL_FUNCTION(attrs, CONCAT(quickSortImpl, type), type, lessFn, CONCAT(stableSort, type), CONCAT(partitionImpl, type))	\
+	DEFINE_QUICK_SORT_FUNCTION(attrs, CONCAT(sort, type), type, CONCAT(quickSortImpl, type))
+
+#define DEFINE_SIMPLE_SORT_FUNCTION(attrs, fnName, type, lessFn)	\
+	attrs void fnName (type* arr, size_t count)						\
+	{																\
+		SIMPLE_SORT_IMPL(fnName, type, arr, count, lessFn, CREATE_TEMP_NUMERIC, DESTROY_TEMP_NUMERIC, COPY_STRUCT, PTR_INC_NUMERIC, PTR_ADD_NUMERIC, PTR_SUB_NUMERIC)	\
+	}
+
+#define DEFINE_INSERTION_SORT_FUNCTION(attrs, fnName, type, lessFn, simpleSortFn)	\
+	attrs void fnName (type* arr, size_t count)										\
+	{																				\
+		INSERTION_SORT_IMPL(type, arr, count, simpleSortFn, lessFn, CREATE_TEMP_NUMERIC, DESTROY_TEMP_NUMERIC, COPY_STRUCT, PTR_INC_NUMERIC, PTR_DEC_NUMERIC, PTR_ADD_NUMERIC, PTR_SUB_NUMERIC)	\
+	}
+#define DEFINE_PARTITION_IMPL_FUNCTION(attrs, fnName, type, lessFn)																	\
+	attrs type* fnName (type* start, type* end, type* pPivot)																		\
+	{																																\
+		PARTITION_IMPL(type, start, end, pPivot, lessFn, CREATE_TEMP_NUMERIC, DESTROY_TEMP_NUMERIC, COPY_STRUCT, PTR_INC_NUMERIC)	\
+	}
+#define DEFINE_PARTITION_FUNCTION(attrs, fnName, type, lessFn, partitionImplFn)		\
+	attrs size_t fnName (type* arr, size_t pivot, size_t count)						\
+	{																				\
+		if (count == 0)																\
+			return 0;																\
+		type* pPivot = partitionImplFn (arr, arr + count, arr + pivot);				\
+		ASSERT(pPivot && arr);														\
+		return pPivot && arr ? pPivot - arr : 0;									\
+	}
+#define DEFINE_QUICK_SORT_IMPL_FUNCTION(attrs, fnName, type, lessFn, fallbackSort, partitionImpl)																\
+	attrs void fnName (type* start, type* end, type* tmp)																										\
+	{																																							\
+		QUICKSORT_IMPL(type, start, end, tmp, fnName, fallbackSort, partitionImpl, lessFn, COPY_STRUCT, PTR_ADD_NUMERIC, PTR_SUB_NUMERIC, PTR_DIFF_NUMERIC)	\
+	}
+#define DEFINE_QUICK_SORT_FUNCTION(attrs, fnName, type, quickSortImplFn)	\
+	attrs void fnName (type* pData, size_t count)							\
+	{																		\
+		type tmp;															\
+		quickSortImplFn (pData, pData + count, &tmp);						\
+	}
+#define SIMPLE_SORT_2(arr, tmp, LESS, COPY, PTR_ADD)	\
+	{													\
+		if (LESS(PTR_ADD(arr, 1), arr))					\
+			SWAP(arr, PTR_ADD(arr, 1), tmp, COPY);		\
+	} (void)0
+#define SIMPLE_SORT_3(arr, tmp, LESS, COPY, PTR_ADD)					\
+	{																	\
+		if (!LESS(PTR_ADD(arr, 1), arr))								\
+		{																\
+			if (LESS(PTR_ADD(arr, 2), PTR_ADD(arr, 1)))					\
+			{															\
+				SWAP(PTR_ADD(arr, 1), PTR_ADD(arr, 2), tmp, COPY);		\
+				if (LESS(PTR_ADD(arr, 1), arr))							\
+					SWAP(arr, PTR_ADD(arr, 1), tmp, COPY);				\
+			}															\
+		}																\
+		else															\
+		{																\
+			if (!LESS(PTR_ADD(arr, 2), PTR_ADD(arr, 1)))				\
+			{															\
+				SWAP(arr, PTR_ADD(arr, 1), tmp, COPY);					\
+				if (LESS(PTR_ADD(arr, 2), PTR_ADD(arr, 1)))				\
+					SWAP(PTR_ADD(arr, 1), PTR_ADD(arr, 2), tmp, COPY);	\
+			}															\
+			else														\
+				SWAP(arr, PTR_ADD(arr, 2), tmp, COPY);					\
+		}																\
+	} (void)0															
+#define SIMPLE_SORT_IMPL(SIMPLE_SORT_FN, type, arr, count, LESS, CREATE_TEMP, DESTROY_TEMP, COPY, PTR_INC, PTR_ADD, PTR_SUB)	\
+	CREATE_TEMP(type, tmp);													\
+	switch (count) {														\
+	case 0:																	\
+	case 1:																	\
+		return;																\
+	case 2:																	\
+		SIMPLE_SORT_2(arr, tmp, LESS, COPY, PTR_ADD);						\
+		DESTROY_TEMP(tmp);													\
+		return;																\
+	case 3:																	\
+		SIMPLE_SORT_3(arr, tmp, LESS, COPY, PTR_ADD);						\
+		DESTROY_TEMP(tmp);													\
+		return;																\
+	default:																\
+		SIMPLE_SORT_FN(arr, count - 1);										\
+		break;																\
+	}																		\
+	for (type* curr = PTR_ADD(arr, count - 1);								\
+		 curr > arr && LESS(curr, PTR_SUB(curr, 1));						\
+		 curr = PTR_SUB(curr, 1)) {											\
+		SWAP(curr, PTR_SUB(curr, 1), tmp, COPY);							\
+	}																		\
+	DESTROY_TEMP(tmp);
+#define INSERTION_SORT_IMPL(type, arr, count, SIMPLE_SORT, LESS, CREATE_TEMP, DESTROY_TEMP, COPY, PTR_INC, PTR_DEC, PTR_ADD, PTR_SUB)	\
+	CREATE_TEMP(type, tmp);																										\
+	if (count <= SIMPLESORT_THRESHOLD) {																						\
+		SIMPLE_SORT(arr, count);																								\
+		return;																													\
+	}																															\
+	type* start = arr;																											\
+	type* end = PTR_ADD(start, count);																							\
+	type* pPrev = start;																										\
+	for (type* curr = PTR_ADD(start, 1); curr != end; PTR_INC(curr), PTR_INC(pPrev)) {											\
+		type* pTmcurr = curr;																									\
+		type* pTmpPrev = pPrev;																									\
+		COPY(tmp, pTmcurr);																										\
+		for (;pTmcurr != start && LESS(tmp, pTmpPrev) ; PTR_DEC(pTmcurr), PTR_DEC(pTmpPrev))									\
+			COPY(pTmcurr, pTmpPrev);																							\
+		COPY(pTmcurr, tmp);																										\
+	}																															\
+	DESTROY_TEMP(tmp);
+#define PARTITION_IMPL(type, start, end, pPivot, LESS, CREATE_TEMP, DESTROY_TEMP, COPY, PTR_INC)	\
+	if (start == end)	return NULL;																\
+	while (start < end && LESS(start, pPivot)) PTR_INC(start);										\
+	CREATE_TEMP(type, tmp);																			\
+	type* pNewPivot = start;																		\
+	for (type* curr = start; curr < end; PTR_INC(curr))	{											\
+		if (LESS(curr, pPivot))																		\
+		{																							\
+			SWAP(curr, pNewPivot, tmp, COPY);														\
+			PTR_INC(pNewPivot);																		\
+		}																							\
+	}																								\
+	SWAP(pPivot, pNewPivot, tmp, COPY);																\
+	DESTROY_TEMP(tmp);																				\
+	return pNewPivot;
+#define PICK_PIVOT_AND_SORT(type, start, end, res, count, tmp, LESS, PTR_ADD, PTR_SUB, COPY) \
+{													\
+	type* p0 = start;								\
+	type* p4 = PTR_SUB(end, 1);						\
+	size_t halfSize = count / 2;					\
+	type* p2 = PTR_ADD(start, halfSize);			\
+	type* p1 = p0 + (p2 - p0) / 2;					\
+	type* p3 = p2 + (p2 - p0) / 2;					\
+	if (LESS(p2, p0))								\
+		SWAP(p0, p2, tmp, COPY);					\
+	if (LESS(p1, p0))								\
+		SWAP(p0, p1, tmp, COPY);					\
+	else if (LESS(p2, p1))							\
+		SWAP(p1, p2, tmp, COPY);					\
+	if (LESS(p3, p2))								\
+	{												\
+		SWAP(p2, p3, tmp, COPY);					\
+		if (LESS(p2, p1))							\
+		{											\
+			SWAP(p1, p2, tmp, COPY);				\
+			if (LESS(p1, p0))						\
+				SWAP(p0, p1, tmp, COPY);			\
+		}											\
+	}												\
+	if (LESS(p4, p3))								\
+	{												\
+		SWAP(p3, p4, tmp, COPY);					\
+		if (LESS(p3, p2))							\
+		{											\
+			SWAP(p2, p3, tmp, COPY);				\
+			if (LESS(p2, p1))						\
+			{										\
+				SWAP(p1, p2, tmp, COPY);			\
+				if (LESS(p1, p0))					\
+					SWAP(p0, p1, tmp, COPY);		\
+			}										\
+		}											\
+	}												\
+	res = p2;										\
+}((void)0)
+#define QUICKSORT_IMPL(type, start, end, tmp, QUICKSORT_IMPL_FN, FALLBACK_SORT, PARTITION_IMPL_FN, LESS, COPY, PTR_ADD, PTR_SUB, PTR_DIFF)	\
+	size_t count = PTR_DIFF(end, start);																\
+	if (count <= QUICKSORT_THRESHOLD) {																	\
+		FALLBACK_SORT(start, count);																	\
+		return;																							\
+	}																									\
+	type* pPivot;																						\
+	PICK_PIVOT_AND_SORT(type, start, end, pPivot, count, tmp, LESS, PTR_ADD, PTR_SUB, COPY);			\
+	pPivot = PARTITION_IMPL_FN(start, end, pPivot);														\
+	QUICKSORT_IMPL_FN(start, pPivot, tmp);																\
+	QUICKSORT_IMPL_FN(PTR_ADD(pPivot, 1), end, tmp);
+
 
 /* Integer utils: */
 static const int log2_tab32[32] = {

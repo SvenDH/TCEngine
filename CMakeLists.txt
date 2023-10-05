@@ -53,6 +53,7 @@ endif()
 
 # Add glfw as static lib
 include_directories($ENV{VULKAN_SDK_PATH}/Include)
+
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -62,22 +63,22 @@ add_subdirectory(deps/glfw)
 include_directories(deps/glfw/include)
 
 # Add luajit as static lib
-include(deps/luajit.cmake)
-include_directories(deps/luajit/src)
-set(LUAJIT luajit-5.1)
+#include(deps/luajit.cmake)
+#include_directories(deps/luajit/src)
+#set(LUAJIT luajit-5.1)
 
 # Add boost.context as static lib
 include_directories(deps/deboost.context/include)
 add_subdirectory(deps/deboost.context)
 
 # Add zlib
-include_directories(ZLIB deps/zlib)
-find_package(ZLIB)
+#include_directories(ZLIB deps/zlib)
+#find_package(ZLIB)
 
 # Add minizip
-set(MZ_ZSTD OFF CACHE BOOL "" FORCE)
-add_subdirectory(deps/minizip)
-include_directories(deps/minizip)
+#set(MZ_ZSTD OFF CACHE BOOL "" FORCE)
+#add_subdirectory(deps/minizip)
+#include_directories(deps/minizip)
 
 if (WIN32)
    set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_WIN32_KHR)
@@ -92,13 +93,13 @@ include_directories(deps/VulkanMemoryAllocator/include)
 include_directories(deps/tiny_imageformat)
 
 file(GLOB tc_sources include/* src/* src/datastructures/* src/graphics/* deps/bstrlib/* deps/nothings/* deps/tiny_imageformat/*)
-add_library(tc_static STATIC ${tc_sources})
+add_library(tc STATIC ${tc_sources})
 
-target_compile_options(tc_static PRIVATE /experimental:c11atomics /std:c11)
+target_compile_options(tc PRIVATE /experimental:c11atomics /std:c11)
 
 # Put all libraries in LIBS 
-set(LIBS fcontext ZLIB::ZLIB minizip uv_a glfw volk GPUOpen::VulkanMemoryAllocator tc_static "${CMAKE_DL_LIBS}")
-#set(LIBS fcontext ZLIB::ZLIB minizip uv_a glfw ${VULKAN_LIB_LIST} GLAD tc_static "${CMAKE_DL_LIBS}")
+#set(LIBS fcontext ZLIB::ZLIB minizip uv_a glfw volk GPUOpen::VulkanMemoryAllocator tc "${CMAKE_DL_LIBS}")
+set(LIBS fcontext uv_a glfw volk GPUOpen::VulkanMemoryAllocator tc "${CMAKE_DL_LIBS}")
 
 add_executable(${PROJECT_NAME} main.c)
 
