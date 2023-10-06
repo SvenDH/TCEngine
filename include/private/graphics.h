@@ -1562,7 +1562,7 @@ typedef void (*set_rendertargetname_func)(renderer_t* renderer, rendertarget_t* 
 typedef void (*set_pipelinename_func)(renderer_t* renderer, pipeline_t* pipeline, const char* name);
 
 
-void renderer_init(const char* app_name, const rendererdesc_t* desc_func, renderer_t** renderer);
+void renderer_init(const char* app_name, const rendererdesc_t* desc_func, renderer_t* renderer);
 void renderer_exit(renderer_t* renderer);
 
 uint32_t descindexfromname(const rootsignature_t* rootsignature, const char* name);

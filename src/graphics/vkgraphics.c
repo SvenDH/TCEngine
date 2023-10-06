@@ -1856,7 +1856,6 @@ static bool add_device(const rendererdesc_t* desc, renderer_t* r)
 		base->pNext = (VkBaseOutStructure*)&next; \
 		base = (VkBaseOutStructure*)base->pNext;  \
 	}
-
 	VkPhysicalDeviceFeatures2KHR gpufeats2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR };
 	VkBaseOutStructure* base = (VkBaseOutStructure*)&gpufeats2;
 #if VK_EXT_fragment_shader_interlock
@@ -2002,18 +2001,59 @@ uint64_t get_vk_device_memory_offset(renderer_t* r, buffer_t* buffer)
 
 static uint32_t r_count = 0;
 
-void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer_t** rptr)
-{
-	TC_ASSERT(app_name && desc && rptr);
-	uint8_t* mem = (uint8_t*)tc_memalign(alignof(renderer_t), sizeof(renderer_t) + sizeof(nulldescriptors_t));
-	TC_ASSERT(mem);
-	memset(mem, 0, sizeof(renderer_t) + sizeof(nulldescriptors_t));
+// Per Thread Render Pass synchronization logic
+typedef struct { uint64_t key; renderpass_t value; } renderpassnode_t;
+typedef struct { uint64_t key; framebuffer_t value; } framebuffernode_t;
+typedef struct { tc_thread_t key; renderpassnode_t** value; } threadrpnode_t;
+typedef struct { tc_thread_t key; framebuffernode_t** value; } threadfbnode_t;
 
-	renderer_t* r = (renderer_t*)mem;
+// renderpass and framebuffer map per thread (this will make lookups lock free and we only need a lock when inserting a RenderPass Map for the first time)
+static threadrpnode_t* renderpasses[MAX_UNLINKED_GPUS] = { NULL };
+static threadfbnode_t* framebuffers[MAX_UNLINKED_GPUS] = { NULL };
+lock_t renderpasslck[MAX_UNLINKED_GPUS] = { 0 };
+
+static renderpassnode_t** get_render_pass_map(uint32_t rid)
+{
+	spin_lock(&renderpasslck[rid]);
+	threadrpnode_t* map = renderpasses[rid];
+	tc_thread_t tid = tc_os->current_thread();
+	threadrpnode_t* node = hmgetp_null(map, tid);
+	if (!node) {	// We need pointer to map, so that thread map can be reallocated without causing data races
+		renderpassnode_t** result = (renderpassnode_t**)tc_calloc(1, sizeof(renderpassnode_t*));
+		renderpassnode_t** r = hmput(renderpasses[rid], tid, result);
+		spin_unlock(&renderpasslck[rid]);
+		return r;
+	}
+	spin_unlock(&renderpasslck[rid]);
+	return node->value;
+}
+
+static framebuffernode_t** get_frame_buffer_map(uint32_t rid)
+{
+	spin_lock(&renderpasslck[rid]);
+	threadfbnode_t* map = framebuffers[rid];
+	tc_thread_t tid = tc_os->current_thread();
+	threadfbnode_t* node = hmgetp_null(map, tid);
+	if (!node) {
+		framebuffernode_t** result = (framebuffernode_t**)tc_calloc(1, sizeof(framebuffernode_t*));
+		framebuffernode_t** r = hmput(framebuffers[rid], tid, result);
+		spin_unlock(&renderpasslck[rid]);
+		return r;
+	}
+	spin_unlock(&renderpasslck[rid]);
+	return node->value;
+}
+
+void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer_t* r)
+{
+	TC_ASSERT(app_name && desc && r);
+	memset(r, 0, sizeof(renderer_t));
+	uint8_t* mem = (uint8_t*)tc_calloc(1, sizeof(nulldescriptors_t));
+	TC_ASSERT(mem);
 	r->gpumode = desc->gpumode;
 	r->shadertarget = desc->shadertarget;
 	r->enablegpubasedvalidation = desc->enablegpubasedvalidation;
-	r->nulldescriptors = (nulldescriptors_t*)(mem + sizeof(renderer_t));
+	r->nulldescriptors = (nulldescriptors_t*)mem;
 	r->name = (char*)tc_calloc(strlen(app_name) + 1, sizeof(char));
 	strcpy(r->name, app_name);
 	TC_ASSERT(desc->gpumode != GPU_MODE_UNLINKED || desc->context); // context required in unlinked mode
@@ -2047,6 +2087,7 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 		info.flags |= VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT;
 	if (r->vk.bufferdeviceaddressextension)
 		info.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+	
 	VmaVulkanFunctions funcs = { 0 };
 	funcs.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
 	funcs.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
@@ -2071,15 +2112,10 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 	funcs.vkCmdCopyBuffer = vkCmdCopyBuffer;
 #if VMA_BIND_MEMORY2 || VMA_VULKAN_VERSION >= 1001000
 	funcs.vkBindBufferMemory2KHR = vkBindBufferMemory2KHR;
-	
 	funcs.vkBindImageMemory2KHR = vkBindImageMemory2KHR;
 #endif
 #if VMA_MEMORY_BUDGET || VMA_VULKAN_VERSION >= 1001000
-#ifdef NX64
-	funcs.vkGetPhysicalDeviceMemoryProperties2KHR = vkGetPhysicalDeviceMemoryProperties2;
-#else
 	funcs.vkGetPhysicalDeviceMemoryProperties2KHR = vkGetPhysicalDeviceMemoryProperties2KHR;
-#endif
 #endif
 #if VMA_VULKAN_VERSION >= 1003000
 	funcs.vkGetDeviceBufferMemoryRequirements = vkGetDeviceBufferMemoryRequirements;
@@ -2110,7 +2146,6 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 	add_default_resources(r);
 	r_count++;
 	TC_ASSERT(r_count <= MAX_UNLINKED_GPUS);
-	*rptr = r;
 }
 
 void vk_exit_renderer(renderer_t* r)
@@ -2118,10 +2153,30 @@ void vk_exit_renderer(renderer_t* r)
 	TC_ASSERT(r);
 	r_count--;
 	remove_default_resources(r);
+
+	// Remove the renderpasses
+	for (ptrdiff_t i = 0; i < hmlen(renderpasses[r->unlinkedrendererindex]); i++) {
+		renderpassnode_t** pmap = renderpasses[r->unlinkedrendererindex][i].value;
+		renderpassnode_t* map = *pmap;
+		for (ptrdiff_t j = 0; j < hmlen(map); ++j)
+			remove_renderpass(r, &map[j].value);
+		hmfree(map);
+		tc_free(pmap);
+	}
+	hmfree(renderpasses[r->unlinkedrendererindex]);
+	for (ptrdiff_t i = 0; i < hmlen(framebuffers[r->unlinkedrendererindex]); i++) {
+		framebuffernode_t** pmap = framebuffers[r->unlinkedrendererindex][i].value;
+		framebuffernode_t* map = *pmap;
+		for (ptrdiff_t j = 0; j < hmlen(map); ++j)
+			remove_framebuffer(r, &map[j].value);
+		hmfree(map);
+		tc_free(pmap);
+	}
+	hmfree(framebuffers[r->unlinkedrendererindex]);
+
 	vmaDestroyAllocator(r->vk.vmaAllocator);
 	remove_device(r);
-	if (r->vk.owninstance)
-		exit_common(r);
+	if (r->vk.owninstance) exit_common(r);
 
 	for (uint32_t i = 0; i < r->linkednodecount; i++) {
 		tc_free(r->vk.availablequeues[i]);
@@ -2131,7 +2186,7 @@ void vk_exit_renderer(renderer_t* r)
 	tc_free(r->vk.usedqueues);
 	tc_free(r->capbits);
 	tc_free(r->name);
-	tc_free(r);
+	tc_free(r->nulldescriptors);
 }
 
 void vk_add_fence(renderer_t* r, fence_t* fence)
@@ -4264,25 +4319,23 @@ void vk_add_pipelinecache(renderer_t* r, const pipelinecachedesc_t* desc, pipeli
 	info.initialDataSize = desc->size;
 	info.pInitialData = desc->data;
 	info.flags = _to_pipeline_cache_flags(desc->flags);
-	CHECK_VKRESULT(vkCreatePipelineCache(r->vk.device, &info, &alloccbs, &pipelineCache->vk.pCache));
+	CHECK_VKRESULT(vkCreatePipelineCache(r->vk.device, &info, &alloccbs, &cache->vk.cache));
 }
 
 void vk_remove_pipelinecache(renderer_t* r, pipelinecache_t* cache)
 {
 	TC_ASSERT(r && cache);
-	if (pipelineCache->vk.cache)
-		vkDestroyPipelineCache(r->vk.device, pipelineCache->vk.cache, &alloccbs);
+	if (cache->vk.cache)
+		vkDestroyPipelineCache(r->vk.device, cache->vk.cache, &alloccbs);
 }
 
 void vk_get_pipelinecachedata(renderer_t* r, pipelinecache_t* cache, size_t* size, void* data)
 {
 	TC_ASSERT(r && cache && size);
-	if (pipelineCache->vk.pCache)
+	if (cache->vk.cache)
 		CHECK_VKRESULT(vkGetPipelineCacheData(r->vk.device, cache->vk.cache, size, data));
 }
-/************************************************************************/
-// Command buffer functions
-/************************************************************************/
+
 void vk_reset_cmdpool(renderer_t* r, cmdpool_t* pool)
 {
 	TC_ASSERT(r && pool);
@@ -4331,8 +4384,8 @@ void vk_cmd_bindrendertargets(
 	if (!rtcount && !depthstencil)
 		return;
 
-	size_t rphash = 0;
-	size_t fbhash = 0;
+	uint32_t rphash = 0;
+	uint32_t fbhash = 0;
 	storeop_t colorstoreop[MAX_RENDER_TARGET_ATTACHMENTS] = { 0 };
 	storeop_t depthstoreop = { 0 };
 	storeop_t stencilstoreop = { 0 };
@@ -4353,72 +4406,63 @@ void vk_cmd_bindrendertargets(
 #endif
 			colorstoreop[i] = rts[i]->tex->lazilyallocated ? STORE_ACTION_DONTCARE : (loadops ? loadops->storecolor[i] : defaultstoreops[i]);
 
-		uint32_t renderPassHashValues[] = {
+		uint32_t rpvals[] = {
 			(uint32_t)rts[i]->format,
 			(uint32_t)rts[i]->samplecount,
 			loadops ? (uint32_t)loadops->loadcolor[i] : defaultloadops[i],
 			(uint32_t)colorstoreop[i]
 		};
-		uint32_t frameBufferHashValues[] = {
+		uint32_t fbvals[] = {
 			rts[i]->vk.id,
 #if defined(USE_MSAA_RESOLVE_ATTACHMENTS)
 			resolveattachment ? rts[i]->resolveattachment->vk.id : 0
 #endif
 		};
-		renderPassHash = tf_mem_hash<uint32_t>(renderPassHashValues, TF_ARRAY_COUNT(renderPassHashValues), renderPassHash);
-		frameBufferHash = tf_mem_hash<uint32_t>(frameBufferHashValues, TF_ARRAY_COUNT(frameBufferHashValues), frameBufferHash);
-
-		++fbrtcount;
+		rphash = crc32_b((uint8_t*)rpvals, TC_COUNT(rpvals) * 4);
+		fbhash = crc32_b((uint8_t*)fbvals, TC_COUNT(fbvals) * 4);
+		fbrtcount++;
 #if defined(USE_MSAA_RESOLVE_ATTACHMENTS)
-		fbrtcount += resolveAttachment ? 1 : 0;
+		fbrtcount += resolveattachment ? 1 : 0;
 #endif
 	}
-	if (depthstencil)
-	{
-		depthstoreop = depthstencil->texture->mLazilyAllocated ? STORE_ACTION_DONTCARE :
-			(loadops ? loadops->mStoreActionDepth : gDefaultStoreActions[0]);
-		stencilstoreop = depthstencil->texture->mLazilyAllocated ? STORE_ACTION_DONTCARE :
-			(loadops ? loadops->mStoreActionStencil : gDefaultStoreActions[0]);
-
-#if defined(USE_MSAA_RESOLVE_ATTACHMENTS)
-		// Dont support depth stencil auto resolve
-		TC_ASSERT(!(IsStoreActionResolve(depthstoreop) || IsStoreActionResolve(stencilstoreop)));
+	if (depthstencil) {
+		depthstoreop = depthstencil->tex->lazilyallocated ? STORE_ACTION_DONTCARE :
+			(loadops ? loadops->storedepth : defaultstoreops[0]);
+		stencilstoreop = depthstencil->tex->lazilyallocated ? STORE_ACTION_DONTCARE :
+			(loadops ? loadops->storestencil : defaultstoreops[0]);
+#if defined(USE_MSAA_RESOLVE_ATTACHMENTS)			// Dont support depth stencil auto resolve
+		TC_ASSERT(!(is_storeop_resolve(depthstoreop) || is_storeop_resolve(stencilstoreop)));
 #endif
-
-		uint32_t hashValues[] =
-		{
+		uint32_t hashvals[] = {
 			(uint32_t)depthstencil->format,
-			(uint32_t)depthstencil->mSampleCount,
-			loadops ? (uint32_t)loadops->mLoadActionDepth : gDefaultLoadActions[0],
-			loadops ? (uint32_t)loadops->mLoadActionStencil : gDefaultLoadActions[0],
+			(uint32_t)depthstencil->samplecount,
+			loadops ? (uint32_t)loadops->loaddepth : defaultloadops[0],
+			loadops ? (uint32_t)loadops->loadstencil : defaultloadops[0],
 			(uint32_t)depthstoreop,
 			(uint32_t)stencilstoreop,
+			rphash
 		};
-		renderPassHash = tf_mem_hash<uint32_t>(hashValues, 6, renderPassHash);
-		frameBufferHash = tf_mem_hash<uint32_t>(&depthstencil->vk.mId, 1, frameBufferHash);
-		vrFoveatedRendering |= depthstencil->mVRFoveatedRendering;
+		rphash = crc32_b((uint8_t*)hashvals, 7 * 4);
+		fbhash = crc32_b((uint8_t*)(uint32_t[]){ depthstencil->vk.id, fbhash }, 8);
 	}
-	if (pColorArraySlices)
-		frameBufferHash = tf_mem_hash<uint32_t>(pColorArraySlices, rtcount, frameBufferHash);
-	if (pColorMipSlices)
-		frameBufferHash = tf_mem_hash<uint32_t>(pColorMipSlices, rtcount, frameBufferHash);
-	if (depthArraySlice != UINT32_MAX)
-		frameBufferHash = tf_mem_hash<uint32_t>(&depthArraySlice, 1, frameBufferHash);
-	if (depthMipSlice != UINT32_MAX)
-		frameBufferHash = tf_mem_hash<uint32_t>(&depthMipSlice, 1, frameBufferHash);
-
-	SampleCount sampleCount = SAMPLE_COUNT_1;
+	if (colorarrayslices)
+		fbhash = crc32_b((uint8_t*)((uint32_t[]){ colorarrayslices, fbhash }), 8);
+	if (colormipslices)
+		fbhash = crc32_b((uint8_t*)((uint32_t[]){ colormipslices, fbhash }), 8);
+	if (deptharrayslice != UINT32_MAX)
+		fbhash = crc32_b((uint8_t*)((uint32_t[]){ depthArraySlice, fbhash }), 8);
+	if (depthmipslice != UINT32_MAX)
+		fbhash = crc32_b((uint8_t*)((uint32_t[]){ depthmipslice, fbhash }), 8);
+	samplecount_t samplecount = SAMPLE_COUNT_1;
 
 	// Need pointer to pointer in order to reassign hash map when it is resized
-	RenderPassNode** pRenderPassMap = get_render_pass_map(pCmd->renderer->mUnlinkedRendererIndex);
-	FrameBufferNode** framebufferMap = get_frame_buffer_map(pCmd->renderer->mUnlinkedRendererIndex);
-
-	RenderPassNode*	 pNode = hmgetp_null(*pRenderPassMap, renderPassHash);
-	FrameBufferNode* framebufferNode = hmgetp_null(*framebufferMap, frameBufferHash);
+	renderpassnode_t** rpmap = get_render_pass_map(cmd->renderer->unlinkedrendererindex);
+	framebuffernode_t** fbmap = get_frame_buffer_map(cmd->renderer->unlinkedrendererindex);
+	renderpassnode_t* rpnode = hmgetp_null(*rpmap, rphash);
+	framebuffernode_t* fbnode = hmgetp_null(*fbmap, fbhash);
 
 	// If a render pass of this combination already exists just use it or create a new one
-	if (!pNode)
-	{
+	if (!pNode) {
 		TinyImageFormat colorFormats[MAX_RENDER_TARGET_ATTACHMENTS] = { 0 };
 		TinyImageFormat depthStencilFormat = TinyImageFormat_UNDEFINED;
 		bool vrMultiview = false;
@@ -4482,9 +4526,9 @@ void vk_cmd_bindrendertargets(
 		add_framebuffer(pCmd->r, &desc, &frameBuffer);
 
 		// No need of a lock here since this map is per thread
-		hmput(*framebufferMap, frameBufferHash, frameBuffer);
+		hmput(*framebufferMap, fbhash, frameBuffer);
 
-		framebufferNode = hmgetp_null(*framebufferMap, frameBufferHash);
+		framebufferNode = hmgetp_null(*framebufferMap, fbhash);
 	}
 
 	framebuffer_t* framebuffer = &framebufferNode->value;
