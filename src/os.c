@@ -143,7 +143,7 @@ static void* mem_realloc(void* ptr, size_t size) {
 void init_context() {
 	context = tc_malloc(sizeof(struct context_t));
 	memset(context, 0, sizeof(struct context_t));
-	context->allocator = tc_mem->system;
+	context->allocator = tc_mem->sys;
 	slab_create(&context->pool, context->allocator, CHUNK_SIZE);
 	
 	uv_replace_allocator(mem_malloc, mem_realloc, mem_calloc, mem_free);
@@ -390,7 +390,16 @@ tc_thread_t os_get_current_thread() {
 
 tc_window_t os_create_window(size_t width, size_t height, const char* title)
 {
+	uv_once(&init, init_context);
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	GLFWwindow* window = glfwCreateWindow(width, height, title, NULL, NULL);
+	TC_ASSERT(window);
+	return window;
+}
+
+void os_destroy_window(tc_window_t window)
+{
+	glfwDestroyWindow(window);
 }
 
 tc_os_i* tc_os = &(tc_os_i) {
@@ -420,4 +429,6 @@ tc_os_i* tc_os = &(tc_os_i) {
 	.create_thread = os_create_thread,
 	.current_thread = os_get_current_thread,
 	.set_thread_affinity = os_set_thread_affinity,
+	.create_window = os_create_window,
+	.destroy_window = os_destroy_window
 };

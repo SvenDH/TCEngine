@@ -20,7 +20,7 @@ queue_wait_idle_func queue_wait_idle;
 get_fence_status_func get_fence_status;
 wait_for_fences_func wait_for_fences;
 toggle_vsync_func toggle_vsync;
-recommendedswapchainfmt_func recommendedswapchainfmt;
+recommended_swapchain_fmt_func recommended_swapchain_fmt;
 
 add_rendertarget_func add_rendertarget;
 remove_rendertarget_func remove_rendertarget;

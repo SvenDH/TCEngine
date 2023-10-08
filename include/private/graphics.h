@@ -1196,7 +1196,7 @@ TC_COMPILE_ASSERT(sizeof(pipeline_t) == 8 * sizeof(uint64_t));
 typedef enum { SWAP_CHAIN_CREATION_FLAG_NONE, SWAP_CHAIN_CREATION_FLAG_ENABLE_FOVEATED_RENDERING_VR } swapchaincreationflags_t;
 
 typedef struct {
-	GLFWwindow* window;				// Window handle
+	tc_window_t window;				// Window handle
 	queue_t** presentqueues;		// Queues which should be allowed to present
 	uint32_t presentqueuecount;		// Number of present queues
 	uint32_t imagecount;			// Number of backbuffers in this swapchain
@@ -1525,7 +1525,7 @@ typedef void (*cmd_updatevirtualtexture_func)(cmd_t* cmd, texture_t* tex, uint32
 //If false is passed or the platform does not support HDR a non HDR format is returned.
 //If true is passed for the hintSrgb parameter, it will return format that is will do gamma correction automatically
 //If false is passed for the hintSrgb parameter the gamma correction should be done as a postprocess step before submitting image to swapchain
-typedef TinyImageFormat (*recommendedswapchainfmt_func)(bool hintHDR, bool hintSRGB);
+typedef TinyImageFormat (*recommended_swapchain_fmt_func)(bool hintHDR, bool hintSRGB);
 
 // Indirect Draw functions
 typedef void (*add_indirectcmdsignature_func)(renderer_t* renderer, const cmdsignaturedesc_t* desc, cmdsignature_t** psignature);
@@ -1567,7 +1567,7 @@ extern remove_queue_func remove_queue;
 extern add_swapchain_func add_swapchain;
 extern remove_swapchain_func remove_swapchain;
 extern acquire_next_image_func acquire_next_image;
-extern recommendedswapchainfmt_func recommendedswapchainfmt;
+extern recommended_swapchain_fmt_func recommended_swapchain_fmt;
 extern queue_submit_func queue_submit;
 extern queue_present_func queue_present;
 extern queue_wait_idle_func queue_wait_idle;

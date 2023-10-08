@@ -2328,16 +2328,16 @@ void vk_add_swapchain(renderer_t* r, const swapchaindesc_t* desc, swapchain_t* s
 	// Surface format. Select a surface format, depending on whether HDR is available.
 	VkSurfaceFormatKHR surface_format = { 0 };
 	surface_format.format = VK_FORMAT_UNDEFINED;
-	uint32_t surfacefmtcount = 0;
+	uint32_t count = 0;
 	VkSurfaceFormatKHR* formats = NULL;
 
 	// Get surface formats count
-	CHECK_VKRESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(r->vk.activegpu, surface, &surfacefmtcount, NULL));
+	CHECK_VKRESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(r->vk.activegpu, surface, &count, NULL));
 
 	// Allocate and get surface formats
-	formats = (VkSurfaceFormatKHR*)tc_calloc(surfacefmtcount, sizeof(*formats));
-	CHECK_VKRESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(r->vk.activegpu, surface, &surfacefmtcount, formats));
-	if ((1 == surfacefmtcount) && (VK_FORMAT_UNDEFINED == formats[0].format)) {
+	formats = (VkSurfaceFormatKHR*)tc_calloc(count, sizeof(*formats));
+	CHECK_VKRESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(r->vk.activegpu, surface, &count, formats));
+	if ((count == 1) && (formats[0].format == VK_FORMAT_UNDEFINED)) {
 		surface_format.format = VK_FORMAT_B8G8R8A8_UNORM;
 		surface_format.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 	}
@@ -2345,7 +2345,7 @@ void vk_add_swapchain(renderer_t* r, const swapchaindesc_t* desc, swapchain_t* s
 		VkSurfaceFormatKHR hdrfmt = { VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT };
 		VkFormat requested_format = (VkFormat)TinyImageFormat_ToVkFormat(desc->colorformat);
 		VkColorSpaceKHR requested_color_space = requested_format == hdrfmt.format ? hdrfmt.colorSpace : VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-		for (uint32_t i = 0; i < surfacefmtcount; i++) {
+		for (uint32_t i = 0; i < count; i++) {
 			if ((requested_format == formats[i].format) && (requested_color_space == formats[i].colorSpace)) {
 				surface_format.format = requested_format;
 				surface_format.colorSpace = requested_color_space;
@@ -2474,9 +2474,8 @@ void vk_add_swapchain(renderer_t* r, const swapchaindesc_t* desc, swapchain_t* s
 	TC_ASSERT(numimages >= desc->imagecount);
 	VkImage* images = (VkImage*)alloca(numimages * sizeof(VkImage));
 	CHECK_VKRESULT(vkGetSwapchainImagesKHR(r->vk.device, vkSwapchain, &numimages, images));
-	uint8_t* mem = (uint8_t*)tc_calloc(1, numimages * sizeof(rendertarget_t*) + sizeof(swapchaindesc_t));
-	TC_ASSERT(mem);
-	swapchain->rts = (rendertarget_t**)mem;
+	swapchain->rts = (rendertarget_t**)tc_calloc(1, numimages * sizeof(rendertarget_t*) + sizeof(swapchaindesc_t));
+	TC_ASSERT(swapchain->rts);
 	swapchain->vk.desc = (swapchaindesc_t*)(swapchain->rts + numimages);
 
 	rendertargetdesc_t rtdesc = { 0 };
@@ -2900,8 +2899,8 @@ void vk_add_texture(renderer_t* r, const texturedesc_t* desc, texture_t* texture
 void vk_remove_texture(renderer_t* r, texture_t* texture)
 {
 	TC_ASSERT(r && texture);
-	TC_ASSERT(VK_NULL_HANDLE != r->vk.device);
-	TC_ASSERT(VK_NULL_HANDLE != texture->vk.image);
+	TC_ASSERT(r->vk.device != VK_NULL_HANDLE);
+	TC_ASSERT(texture->vk.image != VK_NULL_HANDLE);
 	if (texture->ownsimage) {
 		const TinyImageFormat fmt = (TinyImageFormat)texture->format;
 		const bool single_plane = TinyImageFormat_IsSinglePlane(fmt);
@@ -5055,7 +5054,7 @@ void vk_get_fence_status(renderer_t* r, fence_t* fence, fencestatus_t* status)
 	else *status = FENCE_NOTSUBMITTED;
 }
 
-TinyImageFormat vk_recommended_swapchainfmt(bool hintHDR, bool hintSRGB)
+TinyImageFormat vk_recommended_swapchain_fmt(bool hintHDR, bool hintSRGB)
 {
 #if !defined(VK_USE_PLATFORM_ANDROID_KHR) && !defined(VK_USE_PLATFORM_VI_NN)
 	if (hintSRGB) return TinyImageFormat_B8G8R8A8_SRGB;
@@ -5956,7 +5955,7 @@ void init_vulkanrenderer(const char* app_name, const rendererdesc_t* desc, rende
 	get_fence_status = vk_get_fence_status;
 	wait_for_fences = vk_wait_for_fences;
 	toggle_vsync = vk_toggle_vsync;
-	recommendedswapchainfmt = vk_recommended_swapchainfmt;
+	recommended_swapchain_fmt = vk_recommended_swapchain_fmt;
 
 	//indirect Draw functions
 	add_indirectcmdsignature = vk_add_indirectcmdsignature;

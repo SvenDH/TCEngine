@@ -81,16 +81,45 @@ int main(void) {
 
 	tc_init_registry();
 	tc_fiber_pool_init(a, 1024);
+
+	int width = 640;
+	int height = 480;
 	
-	renderer_t renderer = { 0 };
+	renderer_t renderer;
+	queue_t present_queue;
+	swapchain_t swapchain;
+
 	rendererdesc_t desc = { 0 };
 	renderer_init("TC", &desc, &renderer);
+
+	queuedesc_t qdesc = {
+		.type = QUEUE_TYPE_GRAPHICS,
+		.flag = QUEUE_FLAG_INIT_MICROPROFILE
+	};
+	add_queue(&renderer, &qdesc, &present_queue);
+	
+	tc_window_t window = tc_os->create_window(width, height, "TC");
+
+	swapchaindesc_t scdesc = { 
+		.window = window,
+		.presentqueuecount = 1,
+		.presentqueues = &present_queue,
+		.width = width,
+		.height = height,
+		.imagecount = 3,
+		.colorformat = recommended_swapchain_fmt(true, true),
+		.colorclearval = { {1, 1, 1, 1} },
+		.vsync = true,
+	};
+	add_swapchain(&renderer, &scdesc, &swapchain);
 	
 	jobdecl_t main_job = { main_fiber, a };
 	tc_fut_t* c = tc_run_jobs(&main_job, 1, NULL);
 	tc_fut_wait_and_free(c, 0);
 
 	TRACE(LOG_INFO, "Created");
+
+	remove_swapchain(&renderer, &swapchain);
 	
 	renderer_exit(&renderer);
 	
