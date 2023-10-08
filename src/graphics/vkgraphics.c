@@ -16,12 +16,10 @@ static _Atomic uint32_t rtids = 1;
 inline void vk_utils_caps_builder(renderer_t* r)
 {
 	r->capbits = (gpucaps_t*)tc_calloc(1, sizeof(gpucaps_t));
-
 	for (uint32_t i = 0; i < TinyImageFormat_Count; ++i) {
 		VkFormatProperties formatsupport;
 		VkFormat fmt = (VkFormat) TinyImageFormat_ToVkFormat((TinyImageFormat)i);
 		if(fmt == VK_FORMAT_UNDEFINED) continue;
-
 		vkGetPhysicalDeviceFormatProperties(r->vk.activegpu, fmt, &formatsupport);
 		r->capbits->canshaderreadfrom[i] =
 				(formatsupport.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0;
@@ -34,9 +32,12 @@ inline void vk_utils_caps_builder(renderer_t* r)
 }
 
 #ifdef VK_RAYTRACING_AVAILABLE
-extern void vk_addRaytracingPipeline(const pipelinedesc_t*, pipeline_t**);
-extern void vk_FillRaytracingDescriptorData(accelstruct_t* ppAccelerationStructures, VkAccelerationStructureKHR* pOutHandle);
+//TODO: implement
+void vk_add_raytracingripeline(const pipelinedesc_t* desc, pipeline_t* pipeline){}
+void vk_fill_raytracingdescriptordata(accelstruct_t* desc, VkAccelerationStructureKHR* info){}
 #endif
+
+void vk_create_shaderreflection(const uint8_t* code, uint32_t codesize, shaderstage_t stage, shaderreflection_t* out);
 
 #define VENDOR_ID_NVIDIA 0x10DE
 #define VENDOR_ID_AMD 0x1002
@@ -59,7 +60,7 @@ typedef enum {
 	GPU_VENDOR_COUNT,
 } gpuvendor_t;
 
-static gpuvendor_t util_to_internal_gpu_vendor(uint32_t vendorid)
+static gpuvendor_t _to_internal_gpu_vendor(uint32_t vendorid)
 {
 	switch(vendorid) {
     case VENDOR_ID_NVIDIA: return GPU_VENDOR_NVIDIA;
@@ -1096,7 +1097,7 @@ void _get_planar_vk_image_memory_requirement(
 		vkGetImageMemoryRequirements2(device, &info2, &req2);
 		offsets[i] += outmemreq->size;
 		outmemreq->alignment = max(req2.memoryRequirements.alignment, outmemreq->alignment);
-		outmemreq->size += round_up_64(req2.memoryRequirements.size, req2.memoryRequirements.alignment);
+		outmemreq->size += align_up(req2.memoryRequirements.size, req2.memoryRequirements.alignment);
 		outmemreq->memoryTypeBits |= req2.memoryRequirements.memoryTypeBits;
 	}
 }
@@ -1424,7 +1425,7 @@ void util_query_gpu_settings(VkPhysicalDevice gpu, VkPhysicalDeviceProperties2* 
 		gpusettings->gpuvendorpreset.revisionid);
 
     uint32_t major, minor, secondarybranch, tertiarybranch;
-	switch ( util_to_internal_gpu_vendor(gpuprops->properties.vendorID)) {
+	switch ( _to_internal_gpu_vendor(gpuprops->properties.vendorID)) {
 	case GPU_VENDOR_NVIDIA:
         major = (gpuprops->properties.driverVersion >> 22) & 0x3ff;
         minor = (gpuprops->properties.driverVersion >> 14) & 0x0ff;
@@ -2409,7 +2410,7 @@ void vk_add_swapchain(renderer_t* r, const swapchaindesc_t* desc, swapchain_t* s
 	vkGetPhysicalDeviceQueueFamilyProperties(r->vk.activegpu, &queuefampropscount, NULL);		// Get queue family properties
 	queuefamprops = (VkQueueFamilyProperties*)alloca(queuefampropscount * sizeof(VkQueueFamilyProperties));
 	vkGetPhysicalDeviceQueueFamilyProperties(r->vk.activegpu, &queuefampropscount, queuefamprops);
-	if (queuefampropscount) {			// Check if hardware provides dedicated present queue
+	if (queuefampropscount) {									// Check if hardware provides dedicated present queue
 		for (uint32_t i = 0; i < queuefampropscount; i++) {
 			VkBool32 supports_present = VK_FALSE;
 			VkResult res = vkGetPhysicalDeviceSurfaceSupportKHR(r->vk.activegpu, i, surface, &supports_present);
@@ -2418,7 +2419,7 @@ void vk_add_swapchain(renderer_t* r, const swapchaindesc_t* desc, swapchain_t* s
 				break;
 			}
 		}
-		if (famidx == UINT32_MAX) {		// If there is no dedicated present queue, just find the first available queue which supports present
+		if (famidx == UINT32_MAX) {								// If there is no dedicated present queue, just find the first available queue which supports present
 			for (uint32_t i = 0; i < queuefampropscount; i++) {
 				VkBool32 supports_present = VK_FALSE;
 				VkResult res = vkGetPhysicalDeviceSurfaceSupportKHR(r->vk.activegpu, i, surface, &supports_present);
@@ -2540,10 +2541,9 @@ void vk_add_buffer(renderer_t* r, const bufferdesc_t* desc, buffer_t* buffer)
 	TC_ASSERT(r->gpumode != GPU_MODE_UNLINKED || desc->nodeidx == r->unlinkedrendererindex);
 	memset(buffer, 0, sizeof(buffer_t));
 	uint64_t size = desc->size;
-	if (desc->descriptors & DESCRIPTOR_TYPE_UNIFORM_BUFFER) {	// Align the buffer size to multiples of the dynamic uniform buffer minimum size
-		uint64_t minAlignment = r->activegpusettings->uniformbufalignment;
-		size = round_up_64(size, minAlignment);
-	}
+	if (desc->descriptors & DESCRIPTOR_TYPE_UNIFORM_BUFFER)		// Align the buffer size to multiples of the dynamic uniform buffer minimum size
+		size = align_up(size, r->activegpusettings->uniformbufalignment);
+	
 	VkBufferCreateInfo info = { 0 };
 	info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	info.size = size;
@@ -2552,15 +2552,14 @@ void vk_add_buffer(renderer_t* r, const bufferdesc_t* desc, buffer_t* buffer)
 	if (desc->memusage == RESOURCE_MEMORY_USAGE_GPU_ONLY || desc->memusage == RESOURCE_MEMORY_USAGE_GPU_TO_CPU)
 		info.usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;			// Buffer can be used as dest in a transfer command (Uploading data to a storage buffer, Readback query data)
 
-	const bool linkedMultiGpu = (r->gpumode == GPU_MODE_LINKED && (desc->sharednodeindices || desc->nodeidx));
-
+	const bool linkedmultigpu = (r->gpumode == GPU_MODE_LINKED && (desc->sharednodeindices || desc->nodeidx));
 	VmaAllocationCreateInfo vma_mem_reqs = { 0 };
 	vma_mem_reqs.usage = (VmaMemoryUsage)desc->memusage;
 	if (desc->flags & BUFFER_CREATION_FLAG_OWN_MEMORY_BIT)
 		vma_mem_reqs.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 	if (desc->flags & BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT)
 		vma_mem_reqs.flags |= VMA_ALLOCATION_CREATE_MAPPED_BIT;
-	if (linkedMultiGpu)
+	if (linkedmultigpu)
 		vma_mem_reqs.flags |= VMA_ALLOCATION_CREATE_DONT_BIND_BIT;
 	if (desc->flags & BUFFER_CREATION_FLAG_HOST_VISIBLE)
 		vma_mem_reqs.requiredFlags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
@@ -2576,7 +2575,7 @@ void vk_add_buffer(renderer_t* r, const bufferdesc_t* desc, buffer_t* buffer)
 	VmaAllocationInfo info2 = { 0 };
 	CHECK_VKRESULT(vmaCreateBuffer(r->vk.vmaAllocator, &info, &vma_mem_reqs, &buffer->vk.buffer, &buffer->vk.alloc, &info2));
 	buffer->data = info2.pMappedData;
-	if (linkedMultiGpu)	{	// Buffer to be used on multiple GPUs
+	if (linkedmultigpu)	{										// Buffer to be used on multiple GPUs
 		VmaAllocationInfo info3 = { 0 };
 		vmaGetAllocationInfo(r->vk.vmaAllocator, buffer->vk.alloc, &info3);
 		// Set all the device indices to the index of the device where we will create the buffer
@@ -3323,14 +3322,12 @@ void vk_update_descriptorset(renderer_t* r, uint32_t index, descset_t* descset, 
 #define FLUSH_OVERFLOW_DESCRIPTOR_UPDATES(type, pInfo, count)                                         \
 	if (descriptorUpdateData + sizeof(type) >= descriptorUpdateDataEnd) {                             \
 		writeset->descriptorCount = i - lastArrayIndexStart;                                          \
-		vkUpdateDescriptorSets(r->vk.device, num_writesets, writesetarr, 0, NULL);                    \
-		/* All previous write sets flushed. Start from zero */                                        \
+		vkUpdateDescriptorSets(r->vk.device, num_writesets, writesetarr, 0, NULL);                    	  \
 		num_writesets = 1;                                                                            \
 		writesetarr[0] = *writeset;                                                                   \
 		writeset = &writesetarr[0];                                                                   \
 		lastArrayIndexStart = i;                                                                      \
 		writeset->dstArrayElement += writeset->descriptorCount;                                       \
-		/* Set descriptor count to the remaining count */                                             \
 		writeset->descriptorCount = count - writeset->dstArrayElement;                                \
 		descriptorUpdateData = descriptorUpdateDataStart;                                             \
 		writeset->pInfo = (type*)descriptorUpdateData;                                                \
@@ -3502,7 +3499,7 @@ void vk_update_descriptorset(renderer_t* r, uint32_t index, descset_t* descset, 
 				writesetKHR.pNext = NULL;
 				writesetKHR.accelerationStructureCount = 1;
 				for (uint32_t i = 0; i < array_count; i++) {
-					vk_FillRaytracingDescriptorData(param->accelstructs[i], &currUpdateData);
+					vk_fill_raytracingdescriptordata(param->accelstructs[i], &currUpdateData);
 					writesetKHR.pAccelerationStructures = &currUpdateData;
 					vkUpdateDescriptorSets(r->vk.device, 1, writeset, 0, NULL);
 					++writeset->dstArrayElement;
@@ -3638,7 +3635,7 @@ void vk_add_shaderbinary(renderer_t* r, const binaryshaderdesc_t* desc, shader_t
 	shader->vk.specializationinfo = NULL;
 	mem = (uint8_t*)(shader->vk.entrynames + counter);
 	counter = 0;
-	shaderreflection_t stageReflections[SHADER_STAGE_COUNT] = { 0 };
+	shaderreflection_t reflections[SHADER_STAGE_COUNT] = { 0 };
 	for (uint32_t i = 0; i < SHADER_STAGE_COUNT; i++) {
 		shaderstage_t mask = (shaderstage_t)(1 << i);
 		if (mask == (shader->stages & mask)) {
@@ -3647,35 +3644,35 @@ void vk_add_shaderbinary(renderer_t* r, const binaryshaderdesc_t* desc, shader_t
 			const binaryshaderstagedesc_t* stage = NULL;
 			switch (mask) {
 				case SHADER_STAGE_VERT:
-					vk_create_shaderreflection((const uint8_t*)desc->vert.bytecode, (uint32_t)desc->vert.bytecodesize, mask, &stageReflections[counter]);
+					vk_create_shaderreflection((const uint8_t*)desc->vert.bytecode, (uint32_t)desc->vert.bytecodesize, mask, &reflections[counter]);
 					info.codeSize = desc->vert.bytecodesize;
 					info.pCode = (const uint32_t*)desc->vert.bytecode;
 					stage = &desc->vert;
 					CHECK_VKRESULT(vkCreateShaderModule(r->vk.device, &info, &alloccbs, &(shader->vk.shadermodules[counter])));
 					break;
 				case SHADER_STAGE_TESC:
-					vk_createShaderReflection((const uint8_t*)desc->hull.bytecode, (uint32_t)desc->hull.bytecodesize, mask, &stageReflections[counter]);
+					vk_create_shaderreflection((const uint8_t*)desc->hull.bytecode, (uint32_t)desc->hull.bytecodesize, mask, &reflections[counter]);
 					info.codeSize = desc->hull.bytecodesize;
 					info.pCode = (const uint32_t*)desc->hull.bytecode;
 					stage = &desc->hull;
 					CHECK_VKRESULT(vkCreateShaderModule(r->vk.device, &info, &alloccbs, &(shader->vk.shadermodules[counter])));
 					break;
 				case SHADER_STAGE_TESE:
-					vk_createShaderReflection((const uint8_t*)desc->domain.bytecode, (uint32_t)desc->domain.bytecodesize, mask, &stageReflections[counter]);
+					vk_create_shaderreflection((const uint8_t*)desc->domain.bytecode, (uint32_t)desc->domain.bytecodesize, mask, &reflections[counter]);
 					info.codeSize = desc->domain.bytecodesize;
 					info.pCode = (const uint32_t*)desc->domain.bytecode;
 					stage = &desc->domain;
 					CHECK_VKRESULT(vkCreateShaderModule(r->vk.device, &info, &alloccbs, &(shader->vk.shadermodules[counter])));
 					break;
 				case SHADER_STAGE_GEOM:
-					vk_createShaderReflection((const uint8_t*)desc->geom.bytecode, (uint32_t)desc->geom.bytecodesize, mask, &stageReflections[counter]);
+					vk_create_shaderreflection((const uint8_t*)desc->geom.bytecode, (uint32_t)desc->geom.bytecodesize, mask, &reflections[counter]);
 					info.codeSize = desc->geom.bytecodesize;
 					info.pCode = (const uint32_t*)desc->geom.bytecode;
 					stage = &desc->geom;
 					CHECK_VKRESULT(vkCreateShaderModule(r->vk.device, &info, &alloccbs,	&(shader->vk.shadermodules[counter])));
 					break;
 				case SHADER_STAGE_FRAG:
-					vk_createShaderReflection((const uint8_t*)desc->frag.bytecode, (uint32_t)desc->frag.bytecodesize, mask, &stageReflections[counter]);
+					vk_create_shaderreflection((const uint8_t*)desc->frag.bytecode, (uint32_t)desc->frag.bytecodesize, mask, &reflections[counter]);
 					info.codeSize = desc->frag.bytecodesize;
 					info.pCode = (const uint32_t*)desc->frag.bytecode;
 					stage = &desc->frag;
@@ -3685,7 +3682,7 @@ void vk_add_shaderbinary(renderer_t* r, const binaryshaderdesc_t* desc, shader_t
 #ifdef VK_RAYTRACING_AVAILABLE
 				case SHADER_STAGE_RAYTRACING:
 #endif
-					vk_createShaderReflection((const uint8_t*)desc->comp.bytecode, (uint32_t)desc->comp.bytecodesize, mask, &stageReflections[counter]);
+					vk_create_shaderreflection((const uint8_t*)desc->comp.bytecode, (uint32_t)desc->comp.bytecodesize, mask, &reflections[counter]);
 					info.codeSize = desc->comp.bytecodesize;
 					info.pCode = (const uint32_t*)desc->comp.bytecode;
 					stage = &desc->comp;
@@ -3699,8 +3696,7 @@ void vk_add_shaderbinary(renderer_t* r, const binaryshaderdesc_t* desc, shader_t
 			counter++;
 		}
 	}
-	// Fill specialization constant entries
-	if (desc->constantcount) {
+	if (desc->constantcount) {										// Fill specialization constant entries
 		shader->vk.specializationinfo = (VkSpecializationInfo*)mem;
 		mem += sizeof(VkSpecializationInfo);
 		VkSpecializationMapEntry* map_entries = (VkSpecializationMapEntry*)mem;
@@ -3725,15 +3721,15 @@ void vk_add_shaderbinary(renderer_t* r, const binaryshaderdesc_t* desc, shader_t
 		specializationInfo->pData = data;
 		specializationInfo->pMapEntries = map_entries;
 	}
-	create_pipelinereflection(stageReflections, counter, shader->reflection);
-	add_shaderdependencies(shader, desc);
+	create_pipelinereflection(reflections, counter, shader->reflection);
+	//add_shaderdependencies(shader, desc);
 }
 
 void vk_remove_shader(renderer_t* r, shader_t* shader)
 {
 	TC_ASSERT(r && shader);
 	TC_ASSERT(VK_NULL_HANDLE != r->vk.device);
-	remove_shaderdependencies(shader);
+	//remove_shaderdependencies(shader);
 	if (shader->stages & SHADER_STAGE_VERT)
 		vkDestroyShaderModule(r->vk.device, shader->vk.shadermodules[shader->reflection->vertexidx], &alloccbs);
 	if (shader->stages & SHADER_STAGE_TESC)
@@ -3978,7 +3974,6 @@ void vk_add_rootsignature(renderer_t* r, const rootsignaturedesc_t* desc, rootsi
 			else rootsignature->vk.descriptorsetlayouts[i] = r->vk.emptydescriptorsetlayout;
 		}
 		if (!arrlen(layout->bindings)) continue;
-
 		uint32_t cumdescriptorcount = 0;
 		for (ptrdiff_t j = 0; j < arrlen(layout->descriptors); j++) {
 			descinfo_t* descinfo = layout->descriptors[j];
@@ -4024,7 +4019,7 @@ void vk_add_rootsignature(renderer_t* r, const rootsignaturedesc_t* desc, rootsi
 			}
 		}
 	}
-	add_rootsignaturedependencies(rootsignature, desc);
+	//add_rootsignaturedependencies(rootsignature, desc);
 	for (uint32_t i = 0; i < DESCRIPTOR_UPDATE_FREQ_COUNT; i++) {
 		arrfree(layouts[i].bindings);
 		arrfree(layouts[i].descriptors);
@@ -4036,7 +4031,7 @@ void vk_add_rootsignature(renderer_t* r, const rootsignaturedesc_t* desc, rootsi
 
 void vk_remove_rootsignature(renderer_t* r, rootsignature_t* rootsignature)
 {
-	remove_rootsignaturedependencies(rootsignature);
+	//remove_rootsignaturedependencies(rootsignature);
 	for (uint32_t i = 0; i < DESCRIPTOR_UPDATE_FREQ_COUNT; i++) {
 		if (rootsignature->vk.descriptorsetlayouts[i] != r->vk.emptydescriptorsetlayout)
 			vkDestroyDescriptorSetLayout(r->vk.device, rootsignature->vk.descriptorsetlayouts[i], &alloccbs);
@@ -4469,7 +4464,6 @@ void vk_cmd_bindrendertargets(
 		hmput(*rpmap, rphash, renderpass);
 		rpnode = hmgetp_null(*rpmap, rphash);
 	}
-
 	renderpass_t* renderpass = &rpnode->value;
 	if (!fbnode) {					// If a frame buffer of this combination already exists just use it or create a new one
 		framebuffer_t framebuffer = { 0 };
@@ -4489,7 +4483,6 @@ void vk_cmd_bindrendertargets(
 		hmput(*fbmap, fbhash, framebuffer);
 		fbnode = hmgetp_null(*fbmap, fbhash);
 	}
-
 	framebuffer_t* framebuffer = &fbnode->value;
 	VkRect2D render_area = { 0 };
 	render_area.extent.width = framebuffer->width;
@@ -4963,7 +4956,6 @@ void vk_queue_submit(queue_t* queue, const queuesubmitdesc_t* desc)
 			signalcount++;
 		}
 	}
-
 	VkSubmitInfo submit_info = { 0 };
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit_info.waitSemaphoreCount = waitcount;
@@ -5114,7 +5106,7 @@ void vk_add_indirectcmdsignature(renderer_t* r, const cmdsignaturedesc_t* desc, 
 			break;
 		default: TC_ASSERT(false); break;
 	}
-	if (!desc->packed) signature->stride = round_up(signature->stride, 16);
+	if (!desc->packed) signature->stride = align_up(signature->stride, 16);
 	*psignature = signature;
 }
 
@@ -5139,7 +5131,6 @@ void vk_cmd_execindirect(cmd_t* cmd, cmdsignature_t* signature, uint32_t maxcmdc
 		else {
 			// Cannot use counter buffer when MDI is not supported. We will blindly loop through maxCommandCount
 			TC_ASSERT(!counterbuf);
-
 			for (uint32_t i = 0; i < maxcmdcount; i++)
 				draw_indirect_fn(cmd->vk.cmdbuf, indirectbuf->vk.buffer, bufoffset + i * signature->stride, 1, signature->stride);
 		}
@@ -6026,4 +6017,158 @@ void exit_vulkanrenderer(renderer_t* r)
 {
 	TC_ASSERT(r);
 	vk_exit_renderer(r);
+}
+/*
+bool _filter_resource(SPIRV_Resource* resource, ShaderStage currentStage)
+{
+	bool filter = false;
+	filter = filter || (resource->is_used == false);
+	filter = filter || (resource->type == SPIRV_Resource_Type::SPIRV_TYPE_STAGE_OUTPUTS);
+	filter = filter || (resource->type == SPIRV_Resource_Type::SPIRV_TYPE_STAGE_INPUTS && currentStage != SHADER_STAGE_VERT);
+	return filter;
+}
+*/
+
+void vk_create_shaderreflection(const uint8_t* code, uint32_t codesize, shaderstage_t stage, shaderreflection_t* out)
+{
+	if (out == NULL) {
+		TRACE(LOG_ERROR, "Create Shader Refection failed. Invalid reflection output!");
+		return;
+	}
+	/*
+	CrossCompiler cc;
+	CreateCrossCompiler((const uint32_t*)code, codesize / sizeof(uint32_t), &cc);
+	ReflectEntryPoint(&cc);
+	ReflectShaderResources(&cc);
+	ReflectShaderVariables(&cc);
+	if (stage == SHADER_STAGE_COMP)
+		ReflectComputeShaderWorkGroupSize(
+			&cc, &out->mNumThreadsPerGroup[0], &out->mNumThreadsPerGroup[1], &out->mNumThreadsPerGroup[2]);
+	else if (stage == SHADER_STAGE_TESC)
+		ReflectHullShaderControlPoint(&cc, &out->mNumControlPoint);
+	// lets find out the size of the name pool we need
+	// also get number of resources while we are at it
+	uint32_t namePoolSize = 0;
+	uint32_t vertexInputCount = 0;
+	uint32_t resourceCount = 0;
+	uint32_t variablesCount = 0;
+	namePoolSize += cc.EntryPointSize + 1;
+	for (uint32_t i = 0; i < cc.ShaderResourceCount; i++) {
+		SPIRV_Resource* resource = cc.pShaderResouces + i;
+		// filter out what we don't use
+		if (!_filter_resource(resource, stage)) {
+			namePoolSize += resource->name_size + 1;
+			if (resource->type == SPIRV_Resource_Type::SPIRV_TYPE_STAGE_INPUTS && stage == SHADER_STAGE_VERT)
+				++vertexInputCount++;
+			else
+				++resourceCount++;
+		}
+	}
+	for (uint32_t i = 0; i < cc.UniformVariablesCount; i++) {
+		SPIRV_Variable* variable = cc.pUniformVariables + i;
+		// check if parent buffer was filtered out
+		bool parentFiltered = _filter_resource(cc.pShaderResouces + variable->parent_index, stage);
+		// filter out what we don't use
+		if (variable->is_used && !parentFiltered) {
+			namePoolSize += variable->name_size + 1;
+			++variablesCount;
+		}
+	}
+	// we now have the size of the memory pool and number of resources
+	char* namePool = NULL;
+	if (namePoolSize) namePool = (char*)tc_calloc(namePoolSize, 1);
+	char* pCurrentName = namePool;
+
+	out->pEntryPoint = pCurrentName;
+	ASSERT(pCurrentName);
+	memcpy(pCurrentName, cc.pEntryPoint, cc.EntryPointSize);
+	pCurrentName += cc.EntryPointSize + 1;
+
+	vertexinput_t* pVertexInputs = NULL;
+	// start with the vertex input
+	if (stage == SHADER_STAGE_VERT && vertexInputCount > 0) {
+		pVertexInputs = (vertexinput_t*)tf_malloc(sizeof(vertexinput_t) * vertexInputCount);
+		uint32_t j = 0;
+		for (uint32_t i = 0; i < cc.ShaderResourceCount; i++) {
+			SPIRV_Resource* resource = cc.pShaderResouces + i;
+			// filter out what we don't use
+			if (!_filter_resource(resource, stage) && resource->type == SPIRV_Resource_Type::SPIRV_TYPE_STAGE_INPUTS) {
+				pVertexInputs[j].size = resource->size;
+				pVertexInputs[j].name = pCurrentName;
+				pVertexInputs[j].name_size = resource->name_size;
+				// we dont own the names memory we need to copy it to the name pool
+				memcpy(pCurrentName, resource->name, resource->name_size);
+				pCurrentName += resource->name_size + 1;
+				j++;
+			}
+		}
+	}
+	uint32_t* indexRemap = NULL;
+	shaderresource_t* pResources = NULL;
+	// continue with resources
+	if (resourceCount) {
+		indexRemap = (uint32_t*)tf_malloc(sizeof(uint32_t) * cc.ShaderResourceCount);
+		pResources = (shaderresource_t*)tf_malloc(sizeof(shaderresource_t) * resourceCount);
+		uint32_t j = 0;
+		for (uint32_t i = 0; i < cc.ShaderResourceCount; i++) {
+			// set index remap
+			indexRemap[i] = (uint32_t)-1;
+			SPIRV_Resource* resource = cc.pShaderResouces + i;
+			// filter out what we don't use
+			if (!_filter_resource(resource, stage) && resource->type != SPIRV_Resource_Type::SPIRV_TYPE_STAGE_INPUTS) {
+				// set new index
+				indexRemap[i] = j;
+
+				pResources[j].type = sSPIRV_TO_DESCRIPTOR[resource->type];
+				pResources[j].set = resource->set;
+				pResources[j].reg = resource->binding;
+				pResources[j].size = resource->size;
+				pResources[j].used_stages = stage;
+
+				pResources[j].name = pCurrentName;
+				pResources[j].name_size = resource->name_size;
+				pResources[j].dim = sSPIRV_TO_RESOURCE_DIM[resource->dim];
+				// we dont own the names memory we need to copy it to the name pool
+				memcpy(pCurrentName, resource->name, resource->name_size);
+				pCurrentName += resource->name_size + 1;
+				j++;
+			}
+		}
+	}
+	shadervar_t* pVariables = NULL;
+	if (variablesCount) {
+		pVariables = (shadervar_t*)tf_malloc(sizeof(shadervar_t) * variablesCount);
+		uint32_t j = 0;
+		for (uint32_t i = 0; i < cc.UniformVariablesCount; i++) {
+			SPIRV_Variable* variable = cc.pUniformVariables + i;
+			// check if parent buffer was filtered out
+			bool parentFiltered = _filter_resource(cc.pShaderResouces + variable->parent_index, stage);
+			// filter out what we don't use
+			if (variable->is_used && !parentFiltered) {
+				pVariables[j].offset = variable->offset;
+				pVariables[j].size = variable->size;
+				ASSERT(indexRemap);
+				pVariables[j].parent_index = indexRemap[variable->parent_index]; //-V522
+				pVariables[j].name = pCurrentName;
+				pVariables[j].name_size = variable->name_size;
+				// we dont own the names memory we need to copy it to the name pool
+				memcpy(pCurrentName, variable->name, variable->name_size);
+				pCurrentName += variable->name_size + 1;
+				j++;
+			}
+		}
+	}
+	tc_free(indexRemap);
+	DestroyCrossCompiler(&cc);
+	// all refection structs should be built now
+	out->mShaderStage = stage;
+	out->pNamePool = namePool;
+	out->mNamePoolSize = namePoolSize;
+	out->pVertexInputs = pVertexInputs;
+	out->mVertexInputsCount = vertexInputCount;
+	out->pShaderResources = pResources;
+	out->mShaderResourceCount = resourceCount;
+	out->pVariables = pVariables;
+	out->mVariableCount = variablesCount;
+	*/
 }

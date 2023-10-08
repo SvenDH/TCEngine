@@ -80,10 +80,10 @@ int main(void) {
 
 	tc_init_registry();
 	tc_fiber_pool_init(a, 1024);
-
+	
 	renderer_t renderer;
 	rendererdesc_t desc = { 0 };
-	init_renderer("TC", &desc, &renderer);
+	renderer_init("TC", &desc, &renderer);
 
 
 	jobdecl_t main_job = { main_fiber, a };

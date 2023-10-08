@@ -86,14 +86,14 @@ endif()
 add_subdirectory(deps/volk)
 include_directories(deps/volk)
 
+include_directories(deps/VulkanMemoryAllocator/include)  
 add_subdirectory(deps/VulkanMemoryAllocator)
-include_directories(deps/VulkanMemoryAllocator/include)
-find_package(VulkanMemoryAllocator CONFIG REQUIRED)
+#find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
 # Add boost.context as static lib
 include_directories(deps/tiny_imageformat)
 
-file(GLOB tc_sources include/* src/* src/datastructures/* src/graphics/* deps/bstrlib/* deps/nothings/* deps/tiny_imageformat/*)
+file(GLOB tc_sources include/* src/* src/datastructures/* src/graphics/* deps/bstrlib/* deps/nothings/* deps/tiny_imageformat/* deps/*)
 add_library(tc STATIC ${tc_sources})
 
 target_compile_options(tc PRIVATE /experimental:c11atomics /std:c11)

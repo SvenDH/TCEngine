@@ -108,7 +108,7 @@ remove_texture_func remove_texture;
 add_virtualtexture_func add_virtualtexture;
 remove_virtualtexture_func remove_virtualtexture;
 
-static renderertype_t selected_api;
+static renderertype_t selected_api = RENDERER_VULKAN;
 
 #if defined(VULKAN)
 extern void init_vulkanrenderer(const char* appname, const rendererdesc_t* desc, renderer_t* renderer);
@@ -145,7 +145,7 @@ static void exit_rendererapi(renderer_t* renderer, const renderertype_t api)
 	}
 }
 
-void init_renderer(const char* appname, const rendererdesc_t* desc, renderer_t* renderer)
+void renderer_init(const char* appname, const rendererdesc_t* desc, renderer_t* renderer)
 {
 	TC_ASSERT(renderer && desc);
 	init_rendererapi(appname, desc, renderer, selected_api);
@@ -153,7 +153,7 @@ void init_renderer(const char* appname, const rendererdesc_t* desc, renderer_t* 
 	//	setextendedsettings(desc->extendedsettings, (*renderer)->activegpusettings);
 }
 
-void exit_renderer(renderer_t* renderer)
+void renderer_exit(renderer_t* renderer)
 {
 	TC_ASSERT(renderer);
 	exit_rendererapi(renderer, selected_api);
@@ -161,10 +161,161 @@ void exit_renderer(renderer_t* renderer)
 
 uint32_t descindexfromname(const rootsignature_t* signature, const char* name)
 {
-	for (uint32_t i = 0; i < signature->descriptorcount; ++i) {
-		if (!strcmp(name, signature->descriptors[i].name)) {
+	for (uint32_t i = 0; i < signature->descriptorcount; i++)
+		if (!strcmp(name, signature->descriptors[i].name))
 			return i;
+	return UINT32_MAX;
+}
+
+static bool shaderres_cmp(shaderresource_t* a, shaderresource_t* b)
+{
+	bool same = true;
+	same = same && (a->type == b->type);
+	same = same && (a->set == b->set);
+	same = same && (a->reg == b->reg);
+	same = same && (a->name_len == b->name_len);
+	if (same == false) return same;
+	same = (strcmp(a->name, b->name) == 0);
+	return same;
+}
+
+static bool shadervar_cmp(shadervar_t* a, shadervar_t* b)
+{
+	bool same = true;
+	same = same && (a->offset == b->offset);
+	same = same && (a->size == b->size);
+	same = same && (a->name_len == b->name_len);
+	if (same == false) return same;
+	same = (strcmp(a->name, b->name) == 0);
+	return same;
+}
+
+void destroy_shaderreflection(shaderreflection_t* reflection)
+{
+	if (reflection == NULL) return;
+	tc_free(reflection->namepool);
+	tc_free(reflection->vertexinputs);
+	tc_free(reflection->shaderresources);
+	tc_free(reflection->variables);
+}
+
+void create_pipelinereflection(shaderreflection_t* reflection, uint32_t numstages, pipelinereflection_t* out)
+{
+	TC_ASSERT(reflection && numstages && out);
+	// Sanity check to make sure we don't have repeated stages.
+	shaderstage_t stages = 0;
+	for (uint32_t i = 0; i < numstages; i++) {
+		if ((stages & reflection[i].stage) != 0) {
+			TRACE(LOG_ERROR, "Duplicate shader stage was detected in shader reflection array.");
+			return;
+		}
+		stages = (shaderstage_t)(stages | reflection[i].stage);
+	}
+	// Combine all shaders
+	// this will have a large amount of looping
+	// 1. count number of resources
+	uint32_t vertstage = ~0u;
+	uint32_t hullstage = ~0u;
+	uint32_t domainstage = ~0u;
+	uint32_t geomstage = ~0u;
+	uint32_t pixstage = ~0u;
+	shaderresource_t* resources = NULL;
+	shadervar_t* vars = NULL;
+	uint32_t numresources = 0;
+	uint32_t numvars = 0;
+	shaderresource_t* unique_resources[512];
+	shaderstage_t shader_usage[512];
+	shadervar_t* uniqueVariable[512];
+	shaderresource_t* uniqueVariableParent[512];
+	for (uint32_t i = 0; i < numstages; i++) {
+		shaderreflection_t* ref = reflection + i;
+		out->reflections[i] = *ref;
+		if (ref->stage == SHADER_STAGE_VERT) vertstage = i;
+		else if (ref->stage == SHADER_STAGE_HULL) hullstage = i;
+		else if (ref->stage == SHADER_STAGE_DOMN) domainstage = i;
+		else if (ref->stage == SHADER_STAGE_GEOM) geomstage = i;
+		else if (ref->stage == SHADER_STAGE_FRAG) pixstage = i;
+		//Loop through all shader resources
+		for (uint32_t j = 0; j < ref->resourcecount; j++) {
+			bool unique = true;
+			//Go through all already added shader resources to see if this shader
+			// resource was already added from a different shader stage. If we find a
+			// duplicate shader resource, we add the shader stage to the shader stage
+			// mask of that resource instead.
+			for (uint32_t k = 0; k < numresources; k++) {
+				unique = !shaderres_cmp(&ref->shaderresources[j], unique_resources[k]);
+				if (unique == false) {
+					shader_usage[k] |= ref->shaderresources[j].used_stages;
+					break;
+				}
+			}
+			//If it's unique, we add it to the list of shader resourceas
+			if (unique == true) {
+				shader_usage[numresources] = ref->shaderresources[j].used_stages;
+				unique_resources[numresources] = &ref->shaderresources[j];
+				numresources++;
+			}
+		}
+		//Loop through all shader variables (constant/uniform buffer members)
+		for (uint32_t j = 0; j < ref->varcount; j++) {
+			bool unique = true;
+			//Go through all already added shader variables to see if this shader
+			// variable was already added from a different shader stage. If we find a
+			// duplicate shader variables, we don't add it.
+			for (uint32_t k = 0; k < numvars; k++) {
+				unique = !shadervar_cmp(&ref->variables[j], uniqueVariable[k]);
+				if (unique == false) break;
+			}
+			//If it's unique we add it to the list of shader variables
+			if (unique) {
+				uniqueVariableParent[numvars] = &ref->shaderresources[ref->variables[j].parent_index];
+				uniqueVariable[numvars] = &ref->variables[j];
+				numvars++;
+			}
 		}
 	}
-	return UINT32_MAX;
+	//Copy over the shader resources in a dynamic array of the correct size
+	if (numresources) {
+		resources = (shaderresource_t*)tc_calloc(numresources, sizeof(shaderresource_t));
+		for (uint32_t i = 0; i < numresources; i++) {
+			resources[i] = *unique_resources[i];
+			resources[i].used_stages = shader_usage[i];
+		}
+	}
+	//Copy over the shader variables in a dynamic array of the correct size
+	if (numvars) {
+		vars = (shadervar_t*)tc_malloc(sizeof(shadervar_t) * numvars);
+		for (uint32_t i = 0; i < numvars; i++) {
+			vars[i] = *uniqueVariable[i];
+			shaderresource_t* parentResource = uniqueVariableParent[i];
+			// look for parent
+			for (uint32_t j = 0; j < numresources; j++)
+				if (shaderres_cmp(&resources[j], parentResource)) {
+					vars[i].parent_index = j;
+					break;
+				}
+		}
+	}
+	// all refection structs should be built now
+	out->shaderstages = stages;
+	out->reflectioncount = numstages;
+	out->vertexidx = vertstage;
+	out->hullidx = hullstage;
+	out->domainidx = domainstage;
+	out->geometryidx = geomstage;
+	out->pixelidx = pixstage;
+	out->resources = resources;
+	out->resourcecount = numresources;
+	out->variables = vars;
+	out->varcount = numvars;
+}
+
+void destroy_pipelinereflection(pipelinereflection_t* reflection)
+{
+	if (reflection == NULL) return;
+	for (uint32_t i = 0; i < reflection->reflectioncount; i++)
+		destroy_shaderreflection(&reflection->reflections[i]);
+
+	tc_free(reflection->resources);
+	tc_free(reflection->variables);
 }

@@ -967,7 +967,7 @@ typedef struct {
 	uint32_t parent_index;		// parents resource index
 	uint32_t offset;			// The offset of the Variable.
 	uint32_t size;				// The size of the Variable.
-	uint32_t name_size;			// name size
+	uint32_t name_len;			// name size
 } shadervar_t;
 
 typedef struct {
@@ -1649,6 +1649,10 @@ void renderer_init(const char* app_name, const rendererdesc_t* desc_func, render
 void renderer_exit(renderer_t* renderer);
 
 uint32_t descindexfromname(const rootsignature_t* rootsignature, const char* name);
+
+void destroy_shaderreflection(shaderreflection_t* reflection);
+void create_pipelinereflection(shaderreflection_t* reflection, uint32_t num_stages, pipelinereflection_t* ou);
+void destroy_pipelinereflection(pipelinereflection_t* reflection);
 
 inline bool is_rootcbv(const char* name) {
 	char lower[MAX_RESOURCE_NAME_LENGTH] = { 0 };
