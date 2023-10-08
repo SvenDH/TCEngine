@@ -52,6 +52,9 @@
         "algorithm": "c",
         "xhash": "c",
         "initializer_list": "c",
-        "cmath": "c"
+        "cmath": "c",
+        "optional": "c",
+        "xtr1common": "c",
+        "map": "c"
     }
 }

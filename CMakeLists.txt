@@ -90,10 +90,12 @@ include_directories(deps/VulkanMemoryAllocator/include)
 add_subdirectory(deps/VulkanMemoryAllocator)
 #find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
-# Add boost.context as static lib
 include_directories(deps/tiny_imageformat)
 
-file(GLOB tc_sources include/* src/* src/datastructures/* src/graphics/* deps/bstrlib/* deps/nothings/* deps/tiny_imageformat/* deps/*)
+include_directories(deps/rmem/inc)
+include_directories(deps/rmem/src)
+
+file(GLOB tc_sources include/* src/* src/datastructures/* src/graphics/* deps/bstrlib/* deps/nothings/* deps/tiny_imageformat/* deps/rmem/inc/* deps/rmem/src/* deps/*)
 add_library(tc STATIC ${tc_sources})
 
 target_compile_options(tc PRIVATE /experimental:c11atomics /std:c11)

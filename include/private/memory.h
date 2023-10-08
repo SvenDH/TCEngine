@@ -43,7 +43,7 @@ typedef struct tc_allocator_i {
 #define TC_REALLOC(_a, _p, _prev, _new) (_a)->alloc(_a, _p, _prev, _new, __FILE__, __LINE__)
 
 #define tc_malloc(_s) TC_ALLOC(tc_mem->sys, _s)
-#define tc_calloc(_n, _s) memset(tc_malloc(_s * _n), 0, _s * _n)
+#define tc_calloc(_n, _s) memset(tc_malloc((_s * _n)), 0, (_s * _n))
 #define tc_free(_p) TC_FREE(tc_mem->sys, _p, 0)
 #define tc_realloc(_p, _s) TC_REALLOC(tc_mem->sys, _p, 0, _s)
 

@@ -76,21 +76,27 @@ static void* main_fiber(void* args) {
 }
 
 int main(void) {
+
 	a = tc_buddy_new(tc_mem->vm, GLOBAL_BUFFER_SIZE, 64);
 
 	tc_init_registry();
 	tc_fiber_pool_init(a, 1024);
 	
-	renderer_t renderer;
+	renderer_t renderer = { 0 };
 	rendererdesc_t desc = { 0 };
 	renderer_init("TC", &desc, &renderer);
 
 
-	jobdecl_t main_job = { main_fiber, a };
-	tc_fut_t* c = tc_run_jobs(&main_job, 1, NULL);
-	tc_fut_wait_and_free(c, 0);
+	//jobdecl_t main_job = { main_fiber, a };
+	//tc_fut_t* c = tc_run_jobs(&main_job, 1, NULL);
+	//tc_fut_wait_and_free(c, 0);
+
+	TRACE(LOG_INFO, "Created");
+	
+	renderer_exit(&renderer);
 	
 	tc_close_registry();
 	tc_fiber_pool_destroy(a);
+
 	return 0;
 }

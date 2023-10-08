@@ -10,6 +10,8 @@
 #include <tinyimageformat_base.h>
 #include <tinyimageformat_query.h>
 
+//#define VK_DEBUG_LOG_EXTENSIONS 1
+//#define _ENABLE_DEBUG_UTILS_EXTENSION
 
 static _Atomic uint32_t rtids = 1;
 
@@ -265,6 +267,7 @@ static void* VKAPI_PTR vk_realloc(void* userdata, void* ptr, size_t size, size_t
 	return tc_realloc(ptr, size);
 }
 static void VKAPI_PTR vk_free(void* userdata, void* ptr) { tc_free(ptr); }
+
 static void VKAPI_PTR vk_internalalloc(void* userdata, size_t size, VkInternalAllocationType type, VkSystemAllocationScope scope){}
 static void VKAPI_PTR vk_internalfree(void* userdata, size_t size, VkInternalAllocationType type, VkSystemAllocationScope scope){}
 
@@ -280,16 +283,16 @@ PFN_vkCmdDrawIndexedIndirectCountAMD pfnVkCmdDrawIndexedIndirectCountKHR = NULL;
 
 VkSampleCountFlagBits _to_vk_sample_count(samplecount_t count);
 
-typedef void (*add_buffer_func)(renderer_t* r, const bufferdesc_t* desc, buffer_t** buf);
+typedef void (*add_buffer_func)(renderer_t* r, const bufferdesc_t* desc, buffer_t* buf);
 typedef void (*remove_buffer_func)(renderer_t* r, buffer_t* buf);
 typedef void (*map_buffer_func)(renderer_t* r, buffer_t* buf, range_t* range);
 typedef void (*unmap_buffer_func)(renderer_t* r, buffer_t* buf);
 typedef void (*cmd_updatebuffer_func)(cmd_t* cmd, buffer_t* buf, uint64_t dstoffset, buffer_t* srcbuf, uint64_t srcoffset, uint64_t size);
 typedef void (*cmd_updatesubresource_func)(cmd_t* cmd, texture_t* tex, buffer_t* srcbuf, const struct subresourcedatadesc_s* desc);
 typedef void (*cmd_copysubresource_func)(cmd_t* cmd, buffer_t* dstbuf, texture_t* tex, const struct subresourcedatadesc_s* desc);
-typedef void (*add_texture_func)(renderer_t* r, const texturedesc_t* desc, texture_t** tex);
+typedef void (*add_texture_func)(renderer_t* r, const texturedesc_t* desc, texture_t* tex);
 typedef void (*remove_texture_func)(renderer_t* r, texture_t* tex);
-typedef void (*add_virtualtexture_func)(cmd_t* cmd, const texturedesc_t* desc, texture_t** tex, void* imagedata);
+typedef void (*add_virtualtexture_func)(cmd_t* cmd, const texturedesc_t* desc, texture_t* tex, void* imagedata);
 typedef void (*remove_virtualtexture_func)(renderer_t* r, virtualtexture_t* tex);
 
 // Descriptor Pool Functions
@@ -342,7 +345,7 @@ static const loadop_t defaultloadops[MAX_RENDER_TARGET_ATTACHMENTS] = { 0 };
 static const storeop_t defaultstoreops[MAX_RENDER_TARGET_ATTACHMENTS] = { 0 };
 
 #if defined(USE_MSAA_RESOLVE_ATTACHMENTS)
-static inline bool is_storeop_resolve(storeop_t action) { return STORE_ACTION_RESOLVE_DONTCARE == action || STORE_ACTION_RESOLVE_STORE == action; }
+static inline bool _is_storeop_resolve(storeop_t action) { return STORE_ACTION_RESOLVE_DONTCARE == action || STORE_ACTION_RESOLVE_STORE == action; }
 #endif
 
 typedef struct {
@@ -390,8 +393,8 @@ typedef struct { tc_thread_t key; renderpassnode_t** value; } threadrpnode_t;
 typedef struct { tc_thread_t key; framebuffernode_t** value; } threadfbnode_t;
 
 // renderpass and framebuffer map per thread (this will make lookups lock free and we only need a lock when inserting a RenderPass Map for the first time)
-static threadrpnode_t* renderpasses[MAX_UNLINKED_GPUS] = { NULL };
-static threadfbnode_t* framebuffers[MAX_UNLINKED_GPUS] = { NULL };
+static threadrpnode_t* renderpasses[MAX_UNLINKED_GPUS] = { 0 };
+static threadfbnode_t* framebuffers[MAX_UNLINKED_GPUS] = { 0 };
 static lock_t renderpasslck[MAX_UNLINKED_GPUS] = { 0 };
 
 static renderpassnode_t** get_render_pass_map(uint32_t rid)
@@ -459,7 +462,7 @@ static void add_renderpass(renderer_t* r, const renderpassdesc_t* desc, renderpa
 #if defined(USE_MSAA_RESOLVE_ATTACHMENTS)
         VkAttachmentReference* resolveattachment_ref = &resolve_attachment_refs[i];
         *resolveattachment_ref = *attachment_ref;
-        if (is_storeop_resolve(desc->storeopcolor[i])) {
+        if (_is_storeop_resolve(desc->storeopcolor[i])) {
             ++attachment_count;
             VkAttachmentDescription* resolveAttachment = &attachments[attachment_count];
             *resolveAttachment = *attachment;
@@ -512,11 +515,9 @@ static void add_framebuffer(renderer_t* r, const framebufferdesc_t* desc, frameb
 {
 	TC_ASSERT(framebuffer);
 	memset(framebuffer, 0, sizeof(framebuffer_t));
-
-	uint32_t colorAttachmentCount = desc->rtcount;
-	uint32_t depthAttachmentCount = (desc->depthstencil) ? 1 : 0;
-
-	if (colorAttachmentCount) {
+	uint32_t color_attachments = desc->rtcount;
+	uint32_t depth_attachments = (desc->depthstencil) ? 1 : 0;
+	if (color_attachments) {
 		framebuffer->width = desc->rendertargets[0]->width;
 		framebuffer->height = desc->rendertargets[0]->height;
 		if (desc->colorarrayslices)
@@ -524,7 +525,7 @@ static void add_framebuffer(renderer_t* r, const framebufferdesc_t* desc, frameb
 		else
 			framebuffer->arraysize = desc->rendertargets[0]->vr ? 1 : desc->rendertargets[0]->arraysize;
 	}
-	else if (depthAttachmentCount) {
+	else if (depth_attachments) {
 		framebuffer->width = desc->depthstencil->width;
 		framebuffer->height = desc->depthstencil->height;
 		if (desc->deptharrayslice != UINT32_MAX)
@@ -534,7 +535,7 @@ static void add_framebuffer(renderer_t* r, const framebufferdesc_t* desc, frameb
 	}
 	else TC_ASSERT(0 && "No color or depth attachments");
 
-	if (colorAttachmentCount && desc->rendertargets[0]->depth > 1)
+	if (color_attachments && desc->rendertargets[0]->depth > 1)
 		framebuffer->arraysize = desc->rendertargets[0]->depth;
 	VkImageView imageviews[VK_MAX_ATTACHMENT_ARRAY_COUNT] = { 0 };
 	VkImageView* iterviews = imageviews;
@@ -544,7 +545,7 @@ static void add_framebuffer(renderer_t* r, const framebufferdesc_t* desc, frameb
 			iterviews++;
 
 #if defined(USE_MSAA_RESOLVE_ATTACHMENTS)
-			if (is_storeop_resolve(desc->rtresolveop[i])) {
+			if (_is_storeop_resolve(desc->rtresolveop[i])) {
 				*iterviews = desc->rendertargets[i]->resolveattachment->vk.descriptor;
 				iterviews++;
 			}
@@ -560,9 +561,8 @@ static void add_framebuffer(renderer_t* r, const framebufferdesc_t* desc, frameb
 			else if (desc->colorarrayslices) handle = desc->colorarrayslices[i];
 			*iterviews = desc->rendertargets[i]->vk.slicedescriptors[handle];
 			iterviews++;
-
 #if defined(USE_MSAA_RESOLVE_ATTACHMENTS)
-			if (is_storeop_resolve(desc->rtresolveop[i])) {
+			if (_is_storeop_resolve(desc->rtresolveop[i])) {
 				*iterviews = desc->rendertargets[i]->resolveattachment->vk.slicedescriptors[handle];
 				++iterviews;
 			}
@@ -602,11 +602,6 @@ static void remove_framebuffer(renderer_t* r, framebuffer_t* framebuffer)
 {
 	TC_ASSERT(r && framebuffer);
 	vkDestroyFramebuffer(r->vk.device, framebuffer->framebuffer, &alloccbs);
-}
-
-static void _internal_log(logtype_t level, const char* msg, const char* component)
-{
-	TRACE(level, "%s ( %s )", component, msg);
 }
 
 #ifdef ENABLE_DEBUG_UTILS_EXTENSION
@@ -1097,7 +1092,7 @@ void _get_planar_vk_image_memory_requirement(
 		vkGetImageMemoryRequirements2(device, &info2, &req2);
 		offsets[i] += outmemreq->size;
 		outmemreq->alignment = max(req2.memoryRequirements.alignment, outmemreq->alignment);
-		outmemreq->size += align_up(req2.memoryRequirements.size, req2.memoryRequirements.alignment);
+		outmemreq->size += round_up(req2.memoryRequirements.size, (uint32_t)req2.memoryRequirements.alignment);
 		outmemreq->memoryTypeBits |= req2.memoryRequirements.memoryTypeBits;
 	}
 }
@@ -1190,7 +1185,7 @@ VkImageAspectFlags _vk_determine_aspect_mask(VkFormat format, bool includeStenci
 	return result;
 }
 
-VkFormatFeatureFlags util_vk_image_usage_to_format_features(VkImageUsageFlags usage)
+VkFormatFeatureFlags _vk_image_usage_to_format_features(VkImageUsageFlags usage)
 {
 	VkFormatFeatureFlags result = (VkFormatFeatureFlags)0;
 	if (VK_IMAGE_USAGE_SAMPLED_BIT == (usage & VK_IMAGE_USAGE_SAMPLED_BIT))
@@ -1339,16 +1334,14 @@ static VkPipelineCacheCreateFlags _to_pipeline_cache_flags(pipelinecacheflags_t 
 	return ret;
 }
 
-uint32_t util_calculate_shared_device_mask(uint32_t gpucount) { return (1 << gpucount) - 1; }
-
-void util_calculate_device_indices(renderer_t* r, uint32_t nodeidx, uint32_t* sharednodeindices, uint32_t sharednodeidxcount, uint32_t* idxs)
+void _get_device_indices(renderer_t* r, uint32_t nodeidx, uint32_t* sharednodeindices, uint32_t sharednodeidxcount, uint32_t* idxs)
 {
 	for (uint32_t i = 0; i < r->linkednodecount; ++i) idxs[i] = i;
 	idxs[nodeidx] = nodeidx;
 	for (uint32_t i = 0; i < sharednodeidxcount; ++i) idxs[sharednodeindices[i]] = nodeidx;
 }
 
-void util_query_gpu_settings(VkPhysicalDevice gpu, VkPhysicalDeviceProperties2* gpuprops, VkPhysicalDeviceMemoryProperties* gpumemprops,
+void _query_gpu_settings(VkPhysicalDevice gpu, VkPhysicalDeviceProperties2* gpuprops, VkPhysicalDeviceMemoryProperties* gpumemprops,
 	VkPhysicalDeviceFeatures2KHR* gpufeats, VkQueueFamilyProperties** queuefamprops, uint32_t* queuefampropscount, gpusettings_t* gpusettings)
 {
 	memset(gpuprops, 0, sizeof(VkPhysicalDeviceProperties2));
@@ -1365,21 +1358,13 @@ void util_query_gpu_settings(VkPhysicalDevice gpu, VkPhysicalDeviceProperties2* 
 		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_INTERLOCK_FEATURES_EXT };
 	gpufeats->pNext = &f;
 #endif
-#ifndef NX64
 	vkGetPhysicalDeviceFeatures2KHR(gpu, gpufeats);
-#else
-	vkGetPhysicalDeviceFeatures2(gpu, gpufeats);
-#endif
 	VkPhysicalDeviceSubgroupProperties p = { 0 };
 	p.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
 	gpuprops->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
 	p.pNext = gpuprops->pNext;
 	gpuprops->pNext = &p;
-#if defined(NX64)
-	vkGetPhysicalDeviceProperties2(gpu, gpuprops);
-#else
 	vkGetPhysicalDeviceProperties2KHR(gpu, gpuprops);
-#endif
 	vkGetPhysicalDeviceQueueFamilyProperties(gpu, queuefampropscount, NULL);
 	*queuefamprops = (VkQueueFamilyProperties*)tc_calloc(*queuefampropscount, sizeof(VkQueueFamilyProperties));
 	vkGetPhysicalDeviceQueueFamilyProperties(gpu, queuefampropscount, *queuefamprops);
@@ -1425,7 +1410,7 @@ void util_query_gpu_settings(VkPhysicalDevice gpu, VkPhysicalDeviceProperties2* 
 		gpusettings->gpuvendorpreset.revisionid);
 
     uint32_t major, minor, secondarybranch, tertiarybranch;
-	switch ( _to_internal_gpu_vendor(gpuprops->properties.vendorID)) {
+	switch (_to_internal_gpu_vendor(gpuprops->properties.vendorID)) {
 	case GPU_VENDOR_NVIDIA:
         major = (gpuprops->properties.driverVersion >> 22) & 0x3ff;
         minor = (gpuprops->properties.driverVersion >> 14) & 0x0ff;
@@ -1474,9 +1459,9 @@ static bool init_common(const char* app_name, const rendererdesc_t* desc, render
 	VkExtensionProperties* vkexts = (VkExtensionProperties*)alloca(sizeof(VkExtensionProperties) * vkextcount);
 	vkEnumerateInstanceExtensionProperties(NULL, &vkextcount, vkexts);
 #if VK_DEBUG_LOG_EXTENSIONS
-	for (uint32_t i = 0; i < vklayercount; ++i)
+	for (uint32_t i = 0; i < vklayercount; i++)
 		TRACE(LOG_INFO, "%s ( %s )", vklayers[i].layerName, "vkinstance-layer");
-	for (uint32_t i = 0; i < vkextcount; ++i)
+	for (uint32_t i = 0; i < vkextcount; i++)
 		TRACE(LOG_INFO, "%s ( %s )", vkexts[i].extensionName, "vkinstance-ext");
 #endif
 	VkApplicationInfo app_info = { 0 };
@@ -1578,7 +1563,7 @@ static bool init_common(const char* app_name, const rendererdesc_t* desc, render
 	TRACE(LOG_INFO, "Creating VkInstance with %i enabled instance layers:", (int)arrlen(temp));
 	for (int i = 0; i < arrlen(temp); i++) TRACE(LOG_INFO, "\tLayer %i: %s", i, temp[i]);
 
-	CHECK_VKRESULT(vkCreateInstance(&instance_info, &alloccbs, &(r->vk.instance)));
+	CHECK_VKRESULT(vkCreateInstance(&instance_info, &alloccbs, &r->vk.instance));
 	arrfree(temp);
 	arrfree(wantedext);
 
@@ -1591,8 +1576,6 @@ static bool init_common(const char* app_name, const rendererdesc_t* desc, render
 		info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
 		info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
 									VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-		info.flags = 0;
-		info.pUserData = NULL;
 		VkResult res = vkCreateDebugUtilsMessengerEXT(r->vk.instance, &info, &alloccbs, &(r->vk.debugutilsmessenger));
 		if (VK_SUCCESS != res) {
 			TRACE(LOG_ERROR, "%s ( %s )", "vkCreateDebugUtilsMessengerEXT failed - disabling Vulkan debug callbacks",
@@ -1606,7 +1589,6 @@ static bool init_common(const char* app_name, const rendererdesc_t* desc, render
 	{
 		VkDebugReportCallbackCreateInfoEXT info = { 0 };
 		info.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
-		info.pNext = NULL;
 		info.pfnCallback = internal_debug_report_callback;
 		info.flags = VK_DEBUG_REPORT_WARNING_BIT_EXT |
 #if defined(__ANDROID__)
@@ -1614,9 +1596,8 @@ static bool init_common(const char* app_name, const rendererdesc_t* desc, render
 #endif
 			VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_DEBUG_BIT_EXT;
 		VkResult res = vkCreateDebugReportCallbackEXT(r->vk.instance, &info, &alloccbs, &(r->vk.debugreport));
-		if (VK_SUCCESS != res) {
+		if (VK_SUCCESS != res)
 			TRACE(LOG_ERROR, "%s ( %s )", "vkCreateDebugReportCallbackEXT failed - disabling Vulkan debug callbacks", "internal_vk_init_instance");
-		}
 	}
 #endif
 	r->unlinkedrendererindex = 0;
@@ -1697,7 +1678,7 @@ static bool _select_best_gpu(renderer_t* r)
 	uint32_t gpuidx = UINT32_MAX;
 	gpusettings_t* gpusettings = (gpusettings_t*)alloca(count * sizeof(gpusettings_t));
 	for (uint32_t i = 0; i < count; ++i) {
-		util_query_gpu_settings(gpus[i], &gpuprops[i], &gpumemprops[i], &gpufeats[i], &queuefamprops[i], &queuefampropscount[i], &gpusettings[i]);
+		_query_gpu_settings(gpus[i], &gpuprops[i], &gpumemprops[i], &gpufeats[i], &queuefamprops[i], &queuefampropscount[i], &gpusettings[i]);
 		TRACE(LOG_INFO, "GPU[%i] detected. Vendor ID: %s, Model ID: %s, Preset: %s, GPU Name: %s", i,
 			gpusettings[i].gpuvendorpreset.vendorid, gpusettings[i].gpuvendorpreset.modelid,
 			presettostr(gpusettings[i].gpuvendorpreset.presetlevel), gpusettings[i].gpuvendorpreset.gpuname);
@@ -1717,7 +1698,6 @@ static bool _select_best_gpu(renderer_t* r)
 		TC_ASSERT(false);
 		return false;
 	}
-
 	TC_ASSERT(gpuidx != UINT32_MAX);
 	r->vk.activegpu = gpus[gpuidx];
 	r->vk.activegpuprops = (VkPhysicalDeviceProperties2*)tc_malloc(sizeof(VkPhysicalDeviceProperties2));
@@ -1739,7 +1719,7 @@ static bool _select_best_gpu(renderer_t* r)
 
 static bool add_device(const rendererdesc_t* desc, renderer_t* r)
 {
-	TC_ASSERT(VK_NULL_HANDLE != r->vk.instance);
+	TC_ASSERT(r->vk.instance != VK_NULL_HANDLE);
 	const char* cache[MAX_DEVICE_EXTENSIONS] = { 0 };
 #if VK_KHR_device_group_creation
 	VkDeviceGroupDeviceCreateInfoKHR info = { VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO_KHR };
@@ -1764,15 +1744,19 @@ static bool add_device(const rendererdesc_t* desc, renderer_t* r)
 		}
 	}
 #endif
+	TRACE(LOG_INFO, "Creating device");
+
 	if (r->linkednodecount < 2 && r->gpumode == GPU_MODE_LINKED)
 		r->gpumode = GPU_MODE_SINGLE;
-	if (!desc->context)
-		if (!_select_best_gpu(r)) return false;
-	else {
+	if (desc->context == NULL) {
+		if (!_select_best_gpu(r)){
+			return false;
+		}
+	} else {
 		TC_ASSERT(desc->gpuindex < desc->context->gpucount);
 		r->vk.activegpu = desc->context->gpus[desc->gpuindex].vk.gpu;
-		r->vk.activegpuprops = (VkPhysicalDeviceProperties2*)tc_malloc(sizeof(VkPhysicalDeviceProperties2));
-		r->activegpusettings = (gpusettings_t*)tc_malloc(sizeof(gpusettings_t));
+		r->vk.activegpuprops = (VkPhysicalDeviceProperties2*)tc_calloc(1, sizeof(VkPhysicalDeviceProperties2));
+		r->activegpusettings = (gpusettings_t*)tc_calloc(1, sizeof(gpusettings_t));
 		*r->vk.activegpuprops = desc->context->gpus[desc->gpuindex].vk.gpuprops;
 		r->vk.activegpuprops->pNext = NULL;
 		*r->activegpusettings = desc->context->gpus[desc->gpuindex].settings;
@@ -1885,7 +1869,7 @@ static bool add_device(const rendererdesc_t* desc, renderer_t* r)
 				}
 			}
 		}
-		tc_free((void*)properties);
+		tc_free(properties);
 	}
 	arrfree(wanted);
 #define ADD_TO_NEXT_CHAIN(condition, next)        \
@@ -1961,8 +1945,8 @@ static bool add_device(const rendererdesc_t* desc, renderer_t* r)
 			queue_infos[queue_infos_count].queueCount = num_queues;
 			queue_infos[queue_infos_count].pQueuePriorities = priorities[i];
 			queue_infos_count++;
-			for (uint32_t n = 0; n < r->linkednodecount; n++)
-				r->vk.availablequeues[n][queuefamiliesprops[i].queueFlags] = num_queues;
+			for (uint32_t j = 0; j < r->linkednodecount; j++)
+				r->vk.availablequeues[j][queuefamiliesprops[i].queueFlags] = num_queues;
 		}
 	}
 	VkDeviceCreateInfo info2 = { 0 };
@@ -2042,12 +2026,9 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 {
 	TC_ASSERT(app_name && desc && r);
 	memset(r, 0, sizeof(renderer_t));
-	uint8_t* mem = (uint8_t*)tc_calloc(1, sizeof(nulldescriptors_t));
-	TC_ASSERT(mem);
 	r->gpumode = desc->gpumode;
 	r->shadertarget = desc->shadertarget;
 	r->enablegpubasedvalidation = desc->enablegpubasedvalidation;
-	r->nulldescriptors = (nulldescriptors_t*)mem;
 	r->name = (char*)tc_calloc(strlen(app_name) + 1, sizeof(char));
 	strcpy(r->name, app_name);
 	TC_ASSERT(desc->gpumode != GPU_MODE_UNLINKED || desc->context); // context required in unlinked mode
@@ -2064,13 +2045,11 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 	}
 	else if (!init_common(app_name, desc, r)) {
 		tc_free(r->name);
-		tc_freealign(r);
 		return;
 	}
 	if (!add_device(desc, r)) {
 		if (r->vk.owninstance) exit_common(r);
 		tc_free(r->name);
-		tc_freealign(r);
 		return;
 	}
 	VmaAllocatorCreateInfo info = { 0 };
@@ -2120,8 +2099,8 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 	vmaCreateAllocator(&info, &r->vk.vmaAllocator);
 	// Empty descriptor set for filling in gaps when example: set 1 is used but set 0 is not used in the shader.
 	// We still need to bind empty descriptor set here to keep some drivers happy
-	VkDescriptorPoolSize descriptorPoolSizes[1] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1 } };
-	add_descriptor_pool(r, 1, 0, descriptorPoolSizes, 1, &r->vk.emptydescriptorpool);
+	VkDescriptorPoolSize sizes[1] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1 } };
+	add_descriptor_pool(r, 1, 0, sizes, 1, &r->vk.emptydescriptorpool);
 	VkDescriptorSetLayoutCreateInfo info3 = { 0 };
 	VkDescriptorSet* emptySets[] = { &r->vk.emptydescriptorset };
 	info3.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -2137,7 +2116,11 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 	_find_queue_family_index(r, 0, QUEUE_TYPE_GRAPHICS, NULL, &r->vk.graphicsqueuefamilyidx, NULL);
 	_find_queue_family_index(r, 0, QUEUE_TYPE_COMPUTE, NULL, &r->vk.computequeuefamilyidx, NULL);
 	_find_queue_family_index(r, 0, QUEUE_TYPE_TRANSFER, NULL, &r->vk.transferqueuefamilyidx, NULL);
-	add_default_resources(r);
+	
+	r->nulldescriptors = (nulldescriptors_t*)tc_calloc(1, sizeof(nulldescriptors_t));
+	TC_ASSERT(r->nulldescriptors);
+
+	//add_default_resources(r);
 	r_count++;
 	TC_ASSERT(r_count <= MAX_UNLINKED_GPUS);
 }
@@ -2146,7 +2129,7 @@ void vk_exit_renderer(renderer_t* r)
 {
 	TC_ASSERT(r);
 	r_count--;
-	remove_default_resources(r);
+	//remove_default_resources(r);
 
 	// Remove the renderpasses
 	for (ptrdiff_t i = 0; i < hmlen(renderpasses[r->unlinkedrendererindex]); i++) {
@@ -2542,7 +2525,7 @@ void vk_add_buffer(renderer_t* r, const bufferdesc_t* desc, buffer_t* buffer)
 	memset(buffer, 0, sizeof(buffer_t));
 	uint64_t size = desc->size;
 	if (desc->descriptors & DESCRIPTOR_TYPE_UNIFORM_BUFFER)		// Align the buffer size to multiples of the dynamic uniform buffer minimum size
-		size = align_up(size, r->activegpusettings->uniformbufalignment);
+		size = round_up(size, r->activegpusettings->uniformbufalignment);
 	
 	VkBufferCreateInfo info = { 0 };
 	info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -2565,7 +2548,6 @@ void vk_add_buffer(renderer_t* r, const bufferdesc_t* desc, buffer_t* buffer)
 		vma_mem_reqs.requiredFlags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 	if (desc->flags & BUFFER_CREATION_FLAG_HOST_COHERENT)
 		vma_mem_reqs.requiredFlags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
 #if defined(ANDROID)
 	if (vma_mem_reqs.usage != VMA_MEMORY_USAGE_GPU_TO_CPU) {
 		vma_mem_reqs.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
@@ -2580,7 +2562,7 @@ void vk_add_buffer(renderer_t* r, const bufferdesc_t* desc, buffer_t* buffer)
 		vmaGetAllocationInfo(r->vk.vmaAllocator, buffer->vk.alloc, &info3);
 		// Set all the device indices to the index of the device where we will create the buffer
 		uint32_t* idxs = (uint32_t*)alloca(r->linkednodecount * sizeof(uint32_t));
-		util_calculate_device_indices(r, desc->nodeidx, desc->sharednodeindices, desc->sharednodeidxcount, idxs);
+		_get_device_indices(r, desc->nodeidx, desc->sharednodeindices, desc->sharednodeidxcount, idxs);
 		VkBindBufferMemoryInfoKHR bind_info = { VK_STRUCTURE_TYPE_BIND_BUFFER_MEMORY_INFO_KHR };
 		VkBindBufferMemoryDeviceGroupInfoKHR group = { VK_STRUCTURE_TYPE_BIND_BUFFER_MEMORY_DEVICE_GROUP_INFO_KHR };
 		group.deviceIndexCount = r->linkednodecount;
@@ -2661,11 +2643,9 @@ void vk_add_texture(renderer_t* r, const texturedesc_t* desc, texture_t* texture
 		TC_ASSERT(false);
 		return;
 	}
-	size_t descsize = (desc->descriptors & DESCRIPTOR_TYPE_RW_TEXTURE ? (desc->miplevels * sizeof(VkImageView)) : 0);
-	uint8_t* mem = (uint8_t*)tc_calloc(1, descsize);
-	TC_ASSERT(mem);
+	memset(texture, 0, sizeof(texture_t));
 	if (desc->descriptors & DESCRIPTOR_TYPE_RW_TEXTURE)
-		texture->vk.UAVdescriptors = (VkImageView*)mem;
+		texture->vk.UAVdescriptors = (VkImageView*)tc_calloc(desc->miplevels, sizeof(VkImageView));
 	if (desc->nativehandle && !(desc->flags & TEXTURE_CREATION_FLAG_IMPORT_BIT)) {
 		texture->ownsimage = false;
 		texture->vk.image = (VkImage)desc->nativehandle;
@@ -2729,7 +2709,7 @@ void vk_add_texture(renderer_t* r, const texturedesc_t* desc, texture_t* texture
 
 		TC_ASSERT(r->capbits->canshaderreadfrom[desc->format] && "GPU shader can't' read from this format");
 
-		VkFormatFeatureFlags format_features = util_vk_image_usage_to_format_features(info.usage);	// Verify that GPU supports this format
+		VkFormatFeatureFlags format_features = _vk_image_usage_to_format_features(info.usage);	// Verify that GPU supports this format
 		VkFormatFeatureFlags flags = props.optimalTilingFeatures & format_features;
 		TC_ASSERT((0 != flags) && "Format is not supported for GPU local images (i.e. not host visible images)");
 		const bool linked = (r->gpumode == GPU_MODE_LINKED) && (desc->sharednodeindices || desc->nodeidx);
@@ -2834,7 +2814,7 @@ void vk_add_texture(renderer_t* r, const texturedesc_t* desc, texture_t* texture
 			vmaGetAllocationInfo(r->vk.vmaAllocator, texture->vk.alloc, &info3);
 			// Set all the device indices to the index of the device where we will create the texture
 			uint32_t* pIndices = (uint32_t*)alloca(r->linkednodecount * sizeof(uint32_t));
-			util_calculate_device_indices(r, desc->nodeidx, desc->sharednodeindices, desc->sharednodeidxcount, pIndices);
+			_get_device_indices(r, desc->nodeidx, desc->sharednodeindices, desc->sharednodeidxcount, pIndices);
 			VkBindImageMemoryInfoKHR bind_info = { VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO_KHR };
 			VkBindImageMemoryDeviceGroupInfoKHR bindDeviceGroup = { VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_DEVICE_GROUP_INFO_KHR };
 			bindDeviceGroup.deviceIndexCount = r->linkednodecount;
@@ -2897,7 +2877,7 @@ void vk_add_texture(renderer_t* r, const texturedesc_t* desc, texture_t* texture
 		if (uav_desc.viewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY || uav_desc.viewType == VK_IMAGE_VIEW_TYPE_CUBE)
 			uav_desc.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
 		uav_desc.subresourceRange.levelCount = 1;
-		for (uint32_t i = 0; i < desc->miplevels; ++i) {
+		for (uint32_t i = 0; i < desc->miplevels; i++) {
 			uav_desc.subresourceRange.baseMipLevel = i;
 			CHECK_VKRESULT(vkCreateImageView(r->vk.device, &uav_desc, &alloccbs, &texture->vk.UAVdescriptors[i]));
 		}
@@ -2940,7 +2920,7 @@ void vk_remove_texture(renderer_t* r, texture_t* texture)
 			vkDestroyImageView(r->vk.device, texture->vk.UAVdescriptors[i], &alloccbs);
 
 	if (texture->vt) remove_virtualtexture(r, texture->vt);
-	tc_free(texture->vk.UAVdescriptors);
+	if (texture->vk.UAVdescriptors) tc_free(texture->vk.UAVdescriptors);
 }
 
 void vk_add_rendertarget(renderer_t* r, const rendertargetdesc_t* desc, rendertarget_t* rendertarget)
@@ -2950,6 +2930,7 @@ void vk_add_rendertarget(renderer_t* r, const rendertargetdesc_t* desc, renderta
 	bool const isdepth = TinyImageFormat_IsDepthOnly(desc->format) || TinyImageFormat_IsDepthAndStencil(desc->format);
 	TC_ASSERT(!((isdepth) && (desc->descriptors & DESCRIPTOR_TYPE_RW_TEXTURE)) && "Cannot use depth stencil as UAV");
 	((rendertargetdesc_t*)desc)->miplevels = max(1U, desc->miplevels);
+	memset(rendertarget, 0, sizeof(rendertarget_t));
 
     uint32_t size = desc->arraysize;
 	uint32_t depthorarraysize = size * desc->depth;
@@ -2957,10 +2938,7 @@ void vk_add_rendertarget(renderer_t* r, const rendertargetdesc_t* desc, renderta
 	if ((desc->descriptors & DESCRIPTOR_TYPE_RENDER_TARGET_ARRAY_SLICES) ||
 		(desc->descriptors & DESCRIPTOR_TYPE_RENDER_TARGET_DEPTH_SLICES))
 		numrtvs *= depthorarraysize;
-	uint8_t* mem = (uint8_t*)tc_calloc(numrtvs, sizeof(VkImageView));
-	TC_ASSERT(mem);
-	rendertarget->vk.slicedescriptors = (VkImageView*)mem;
-
+	rendertarget->vk.slicedescriptors = (VkImageView*)tc_calloc(numrtvs, sizeof(VkImageView));
 	rendertarget->vk.id = atomic_fetch_add_explicit(&rtids, 1, memory_order_relaxed);
 
 	texturedesc_t tex_desc = { 0 };
@@ -3052,7 +3030,6 @@ void vk_add_rendertarget(renderer_t* r, const rendertargetdesc_t* desc, renderta
 	rendertarget->format = tex_desc.format;
 	rendertarget->clearval = desc->clearval;
     rendertarget->vr = (desc->flags & TEXTURE_CREATION_FLAG_VR_MULTIVIEW) != 0;
-
 	_initial_transition(r, &rendertarget->tex, desc->state);
 
 #if defined(USE_MSAA_RESOLVE_ATTACHMENTS)
@@ -3090,6 +3067,7 @@ void vk_add_sampler(renderer_t* r, const samplerdesc_t* desc, sampler_t* sampler
 	TC_ASSERT(r && desc && sampler);
 	TC_ASSERT(VK_NULL_HANDLE != r->vk.device);
 	TC_ASSERT(desc->compareop < MAX_COMPARE_MODES);
+	memset(sampler, 0, sizeof(sampler_t));
 	//default sampler lod values. Used if not overriden by setLODrange or not Linear mipmaps
 	float minSamplerLod = 0;
 	float maxSamplerLod = desc->mipmapmode == MIPMAP_MODE_LINEAR ? VK_LOD_CLAMP_NONE : 0;
@@ -4371,7 +4349,7 @@ void vk_cmd_bindrendertargets(
 	// We hash the texture id associated with the render target to generate frame buffer hash
 	for (uint32_t i = 0; i < rtcount; i++) {
 #if defined(USE_MSAA_RESOLVE_ATTACHMENTS)
-		bool resolveattachment = loadops && is_storeop_resolve(loadops->storecolor[i]);
+		bool resolveattachment = loadops && _is_storeop_resolve(loadops->storecolor[i]);
 		if (resolveattachment)
 			colorstoreop[i] = rts[i]->texture->lazilyallocated ? STORE_ACTION_RESOLVE_DONTCARE : STORE_ACTION_DONTCARE;
 		else
@@ -4403,7 +4381,7 @@ void vk_cmd_bindrendertargets(
 		stencilstoreop = depthstencil->tex.lazilyallocated ? STORE_ACTION_DONTCARE :
 			(loadops ? loadops->storestencil : defaultstoreops[0]);
 #if defined(USE_MSAA_RESOLVE_ATTACHMENTS)			// Dont support depth stencil auto resolve
-		TC_ASSERT(!(is_storeop_resolve(depthstoreop) || is_storeop_resolve(stencilstoreop)));
+		TC_ASSERT(!(_is_storeop_resolve(depthstoreop) || _is_storeop_resolve(stencilstoreop)));
 #endif
 		uint32_t hashvals[] = {
 			(uint32_t)depthstencil->format,
@@ -5106,7 +5084,7 @@ void vk_add_indirectcmdsignature(renderer_t* r, const cmdsignaturedesc_t* desc, 
 			break;
 		default: TC_ASSERT(false); break;
 	}
-	if (!desc->packed) signature->stride = align_up(signature->stride, 16);
+	if (!desc->packed) signature->stride = round_up(signature->stride, 16);
 	*psignature = signature;
 }
 
@@ -5367,7 +5345,7 @@ void vk_set_pipelinename(renderer_t* r, pipeline_t* pipeline, const char* name)
 }
 
 // Allocate Vulkan memory for the virtual page
-static bool allocate_virtualpage(renderer_t* r, texture_t* tex, vtpage_t* page, buffer_t* intermediatebuf)
+static bool allocate_virtualpage(renderer_t* r, texture_t* tex, vtpage_t* page, buffer_t** intermediatebuf)
 {
 	if (page->vk.imagemembind.memory != VK_NULL_HANDLE)
 		return false;
@@ -5383,7 +5361,8 @@ static bool allocate_virtualpage(renderer_t* r, texture_t* tex, vtpage_t* page, 
 	snprintf(debugNameBuffer, MAX_DEBUG_NAME_LENGTH, "(tex %p) VT page #%u intermediate buffer", pTexture, virtualPage.index);
 	desc.pName = debugNameBuffer;
 #endif
-	add_buffer(r, &desc, intermediatebuf);
+	*intermediatebuf = (buffer_t*)tc_calloc(1, sizeof(buffer_t));
+	add_buffer(r, &desc, *intermediatebuf);
 
 	VkMemoryRequirements reqs = { 0 };
 	reqs.size = page->vk.size;
@@ -5558,7 +5537,6 @@ void vk_upload_page(cmd_t* cmd, texture_t* tex, vtpage_t* page, uint32_t* n, uin
 			map_buffer(cmd->renderer, intermediatebuf, NULL);
 		//CPU to GPU
 		memcpy(intermediatebuf->data, data, page->vk.size);
-
 		if (intermediatemap)
 			unmap_buffer(cmd->renderer, intermediatebuf);
 
@@ -5944,7 +5922,7 @@ void init_vulkanrenderer(const char* app_name, const rendererdesc_t* desc, rende
 	update_descriptorset = vk_update_descriptorset;
 
 	// Command buffer functions
-	reset_cmdpool = reset_cmdpool;
+	reset_cmdpool = vk_reset_cmdpool;
 	cmd_begin = vk_cmd_begin;
 	cmd_end = vk_cmd_end;
 	cmd_bindrendertargets = vk_cmd_bindrendertargets;

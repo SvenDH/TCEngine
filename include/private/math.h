@@ -300,6 +300,13 @@ inline size_t align_up(size_t val, uint32_t align) {
 	return (val + (align - 1)) & -align;
 }
 
+inline size_t round_up(size_t val, size_t multiple) {
+    if (multiple == 0)  return val;
+    size_t remainder = val % multiple;
+    if (remainder == 0)  return val;
+    return val + multiple - remainder;
+}
+
 // Returns the next power of 2 from x
 inline uint32_t next_power_of_2(uint32_t x) {
 	if (x==0)

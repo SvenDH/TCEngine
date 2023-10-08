@@ -1542,7 +1542,7 @@ typedef void (*cmd_endquery_func)(cmd_t* cmd, querypool_t* pool, querydesc_t* qu
 typedef void (*cmd_resolvequery_func)(cmd_t* cmd, querypool_t* pool, buffer_t* readbackbuf, uint32_t startquery, uint32_t querycount);
 
 // Stats Info Interface
-typedef void (*get_memstats_func)(renderer_t* renderer, char* stats);
+typedef void (*get_memstats_func)(renderer_t* renderer, char** stats);
 typedef void (*get_memuse_func)(renderer_t* renderer, uint64_t* used, uint64_t* totalallocated);
 typedef void (*free_memstats_func)(renderer_t* renderer, char* stats);
 

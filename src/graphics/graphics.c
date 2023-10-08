@@ -116,13 +116,13 @@ extern void init_vulkanrenderer(const char* appname, const rendererdesc_t* desc,
 extern void exit_vulkanrenderer(renderer_t* renderer);
 #endif
 
-static void init_rendererapi(const char* appname, const rendererdesc_t* desc, renderer_t* renderer, const renderertype_t api)
+static void init_rendererapi(const char* app_name, const rendererdesc_t* desc, renderer_t* renderer, const renderertype_t api)
 {
 	switch (api) {
 #if defined(VULKAN)
 	case RENDERER_VULKAN:
 		//init_vulkanraytracingfuncs();
-		init_vulkanrenderer(appname, desc, renderer);
+		init_vulkanrenderer(app_name, desc, renderer);
 		break;
 #endif
 	default:
@@ -145,10 +145,10 @@ static void exit_rendererapi(renderer_t* renderer, const renderertype_t api)
 	}
 }
 
-void renderer_init(const char* appname, const rendererdesc_t* desc, renderer_t* renderer)
+void renderer_init(const char* app_name, const rendererdesc_t* desc, renderer_t* renderer)
 {
 	TC_ASSERT(renderer && desc);
-	init_rendererapi(appname, desc, renderer, selected_api);
+	init_rendererapi(app_name, desc, renderer, selected_api);
 	//if (desc->extendedsettings && *renderer)
 	//	setextendedsettings(desc->extendedsettings, (*renderer)->activegpusettings);
 }

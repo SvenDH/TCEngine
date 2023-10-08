@@ -3,6 +3,26 @@
 /*==========================================================*/
 #include "private_types.h"
 
+#include <rmem.h>
+
+#define ENABLE_MTUNER
+
+#ifdef ENABLE_MTUNER
+#define MTUNER_ALLOC(_handle, _ptr, _size, _overhead) rmemAlloc((_handle), (_ptr), (uint32_t)(_size), (uint32_t)(_overhead))
+#define MTUNER_ALIGNED_ALLOC(_handle, _ptr, _size, _overhead, _align) \
+	rmemAllocAligned((_handle), (_ptr), (uint32_t)(_size), (uint32_t)(_overhead), (uint32_t)(_align))
+#define MTUNER_REALLOC(_handle, _ptr, _size, _overhead, _prevPtr) \
+	rmemRealloc((_handle), (_ptr), (uint32_t)(_size), (uint32_t)(_overhead), (_prevPtr))
+#define MTUNER_FREE(_handle, _ptr) rmemFree((_handle), (_ptr))
+#else
+#define MTUNER_ALLOC(_handle, _ptr, _size, _overhead)
+#define MTUNER_ALIGNED_ALLOC(_handle, _ptr, _size, _overhead, _align)
+#define MTUNER_REALLOC(_handle, _ptr, _size, _overhead, _prevPtr)
+#define MTUNER_FREE(_handle, _ptr)
+#endif
+
+
+
 
 static
 tc_allocator_i allocator_create_child(const tc_allocator_i* parent, const char* name)
@@ -34,7 +54,14 @@ void* vm_alloc(tc_allocator_i* a, void* ptr, size_t prev_size, size_t new_size, 
 static
 void* system_alloc(tc_allocator_i* a, void* ptr, size_t prev_size, size_t new_size, const char* file, uint32_t line)
 {
-	return realloc(ptr, new_size);
+	if (ptr != NULL && new_size == 0) {
+		MTUNER_FREE(0, ptr);
+		free(ptr);
+		return NULL;
+	}
+	void* new_ptr = realloc(ptr, new_size);
+	MTUNER_REALLOC(0, new_ptr, new_size, 0, ptr);
+	return new_ptr;
 }
 
 static tc_allocator_i system_allocator = {
