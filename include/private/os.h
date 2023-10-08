@@ -10,8 +10,8 @@
 typedef struct tc_allocator_i tc_allocator_i;
 typedef struct tc_stream_i tc_stream_i;
 typedef struct tc_fut_s tc_fut_t;
-
 typedef uint64_t tc_thread_t;
+typedef void* tc_window_t;
 
 typedef void(*tc_thread_f)(void*);
 
@@ -103,6 +103,10 @@ typedef struct tc_os_i {
     tc_thread_t (*current_thread)();
 
     void (*set_thread_affinity)(tc_thread_t thread, uint32_t cpu_num);
+
+    tc_window_t (*create_window)(size_t width, size_t height, const char* title);
+
+    void (*destroy_window)(tc_window_t window);
 
 } tc_os_i;
 

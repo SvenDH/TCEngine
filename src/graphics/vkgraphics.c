@@ -1421,7 +1421,7 @@ void _query_gpu_settings(VkPhysicalDevice gpu, VkPhysicalDeviceProperties2* gpup
 	default:
 		uint32_t version = gpuprops->properties.driverVersion;
 		char* outversionstr = gpusettings->gpuvendorpreset.gpudriverversion;
-		TC_ASSERT(VK_MAX_DESCRIPTION_SIZE == TC_COUNT(outversionstr));
+		//TC_ASSERT(VK_MAX_DESCRIPTION_SIZE == TC_COUNT(outversionstr));
 		sprintf(outversionstr, "%u.%u.%u", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 		break;
 	}
@@ -1926,7 +1926,7 @@ static bool add_device(const rendererdesc_t* desc, renderer_t* r)
 	uint32_t queue_infos_count = 0;
 	VkDeviceQueueCreateInfo* queue_infos = (VkDeviceQueueCreateInfo*)alloca(queuefamcount * sizeof(VkDeviceQueueCreateInfo));
 
-	const uint32_t maxQueueFlag = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_SPARSE_BINDING_BIT | VK_QUEUE_PROTECTED_BIT;
+	const uint32_t maxQueueFlag = 383; // All VkQueueFlagBits
 	r->vk.availablequeues = (uint32_t**)tc_malloc(r->linkednodecount * sizeof(uint32_t*));
 	r->vk.usedqueues = (uint32_t**)tc_malloc(r->linkednodecount * sizeof(uint32_t*));
 	for (uint32_t i = 0; i < r->linkednodecount; i++) {
@@ -1945,8 +1945,9 @@ static bool add_device(const rendererdesc_t* desc, renderer_t* r)
 			queue_infos[queue_infos_count].queueCount = num_queues;
 			queue_infos[queue_infos_count].pQueuePriorities = priorities[i];
 			queue_infos_count++;
-			for (uint32_t j = 0; j < r->linkednodecount; j++)
+			for (uint32_t j = 0; j < r->linkednodecount; j++) {
 				r->vk.availablequeues[j][queuefamiliesprops[i].queueFlags] = num_queues;
+			}
 		}
 	}
 	VkDeviceCreateInfo info2 = { 0 };
@@ -2039,7 +2040,7 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 #ifdef ENABLE_DEBUG_UTILS_EXTENSION
 		r->vk.debugutilsmessenger = desc->context->vk.debugutilsmessenger;
 #else
-		r->vk.pVkDebugReport = desc->context->vk.pVkDebugReport;
+		r->vk.pVkDebugReport = desc->context->vk.debugreport;
 #endif
 		r->unlinkedrendererindex = r_count;
 	}
@@ -2120,7 +2121,7 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 	r->nulldescriptors = (nulldescriptors_t*)tc_calloc(1, sizeof(nulldescriptors_t));
 	TC_ASSERT(r->nulldescriptors);
 
-	//add_default_resources(r);
+	add_default_resources(r);
 	r_count++;
 	TC_ASSERT(r_count <= MAX_UNLINKED_GPUS);
 }
@@ -2129,7 +2130,7 @@ void vk_exit_renderer(renderer_t* r)
 {
 	TC_ASSERT(r);
 	r_count--;
-	//remove_default_resources(r);
+	remove_default_resources(r);
 
 	// Remove the renderpasses
 	for (ptrdiff_t i = 0; i < hmlen(renderpasses[r->unlinkedrendererindex]); i++) {

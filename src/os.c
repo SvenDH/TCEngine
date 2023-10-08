@@ -4,6 +4,7 @@
 #include "private_types.h"
 
 #include <uv.h>
+#include <GLFW/glfw3.h>
 #include <stb_ds.h>
 
 void* mem_map(size_t size) {
@@ -142,10 +143,12 @@ static void* mem_realloc(void* ptr, size_t size) {
 void init_context() {
 	context = tc_malloc(sizeof(struct context_t));
 	memset(context, 0, sizeof(struct context_t));
-	context->allocator = tc_buddy_new(tc_mem->vm, OS_ALLOCATOR_SIZE, OS_MIN_ALLOC_SIZE);
+	context->allocator = tc_mem->system;
 	slab_create(&context->pool, context->allocator, CHUNK_SIZE);
 	
-	//uv_replace_allocator(mem_malloc, mem_realloc, mem_calloc, mem_free);
+	uv_replace_allocator(mem_malloc, mem_realloc, mem_calloc, mem_free);
+
+	if (!glfwInit()) TRACE(LOG_ERROR, "Failed to initialie GLFW");
 }
 
 static 
@@ -383,6 +386,11 @@ tc_thread_t os_get_current_thread() {
 #else
 	return pthread_self();
 #endif
+}
+
+tc_window_t os_create_window(size_t width, size_t height, const char* title)
+{
+	GLFWwindow* window = glfwCreateWindow(width, height, title, NULL, NULL);
 }
 
 tc_os_i* tc_os = &(tc_os_i) {
