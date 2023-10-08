@@ -13,14 +13,14 @@ add_queue_func add_queue;
 remove_queue_func remove_queue;
 add_swapchain_func add_swapchain;
 remove_swapchain_func remove_swapchain;
-acquire_nextimage_func acquire_nextimage;
-recommendedswapchainfmt_func recommendedswapchainfmt;
+acquire_next_image_func acquire_next_image;
 queue_submit_func queue_submit;
 queue_present_func queue_present;
-queue_waitidle_func queue_waitidle;
-get_fencestatus_func get_fencestatus;
+queue_wait_idle_func queue_wait_idle;
+get_fence_status_func get_fence_status;
 wait_for_fences_func wait_for_fences;
 toggle_vsync_func toggle_vsync;
+recommendedswapchainfmt_func recommendedswapchainfmt;
 
 add_rendertarget_func add_rendertarget;
 remove_rendertarget_func remove_rendertarget;
@@ -54,7 +54,7 @@ cmd_setscissor_func cmd_setscissor;
 cmd_setstencilreferenceval_func cmd_setstencilreferenceval;
 cmd_bindpipeline_func cmd_bindpipeline;
 cmd_binddescset_func cmd_binddescset;
-cmd_binddescsetwithrootbbvs_func cmd_binddescsetwithrootbbvs;
+cmd_binddescsetwithrootcbvs_func cmd_binddescsetwithrootcbvs;
 cmd_bindpushconstants_func cmd_bindpushconstants;
 cmd_bindindexbuffer_func cmd_bindindexbuffer;
 cmd_bindvertexbuffer_func cmd_bindvertexbuffer;
@@ -96,18 +96,6 @@ set_rendertargetname_func set_rendertargetname;
 set_pipelinename_func set_pipelinename;
 
 // Internal Resource Load Functions
-typedef void (*add_buffer_func)(renderer_t* renderer, const bufferdesc_t* desc, buffer_t* buf);
-typedef void (*remove_buffer_func)(renderer_t* renderer, buffer_t* buf);
-typedef void (*map_buffer_func)(renderer_t* renderer, buffer_t* buf, range_t* range);
-typedef void (*unmap_buffer_func)(renderer_t* renderer, buffer_t* buf);
-typedef void (*cmd_updatebuffer_func)(cmd_t* cmd, buffer_t* buf, uint64_t dstoffset, buffer_t* srcbuf, uint64_t srcoffset, uint64_t size);
-typedef void (*cmd_updatesubresource_func)(cmd_t* cmd, texture_t* tex, buffer_t* srcbuf, const struct subresourcedatadesc_s* desc);
-typedef void (*cmd_copysubresource_func)(cmd_t* cmd, buffer_t* dstbuf, texture_t* tex, const struct subresourcedatadesc_s* desc);
-typedef void (*add_texture_func)(renderer_t* renderer, const texturedesc_t* desc, texture_t* tex);
-typedef void (*remove_texture_func)(renderer_t* renderer, texture_t* tex);
-typedef void (*add_virtualtexture_func)(cmd_t* cmd, const texturedesc_t* desc, texture_t* tex, void* imagedata);
-typedef void (*remove_virtualtexture_func)(renderer_t* renderer, virtualtexture_t* tex);
-
 add_buffer_func add_buffer;
 remove_buffer_func remove_buffer;
 map_buffer_func map_buffer;
@@ -124,7 +112,7 @@ static renderertype_t selected_api;
 
 #if defined(VULKAN)
 extern void init_vulkanrenderer(const char* appname, const rendererdesc_t* desc, renderer_t* renderer);
-extern void init_vulkanraytracingfuncs();
+//extern void init_vulkanraytracingfuncs();
 extern void exit_vulkanrenderer(renderer_t* renderer);
 #endif
 
@@ -133,7 +121,7 @@ static void init_rendererapi(const char* appname, const rendererdesc_t* desc, re
 	switch (api) {
 #if defined(VULKAN)
 	case RENDERER_VULKAN:
-		init_vulkanraytracingfuncs();
+		//init_vulkanraytracingfuncs();
 		init_vulkanrenderer(appname, desc, renderer);
 		break;
 #endif

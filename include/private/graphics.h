@@ -4,7 +4,7 @@
 #pragma once
 #include "core.h"
 #define TinyImageFormat_HAVE_UINTXX_T
-#include <tinyimageformat.h>
+#include <tinyimageformat_base.h>
 
 #include "private/vkgraphics.h"
 
@@ -597,7 +597,7 @@ typedef struct {
 			VkDeviceSize size;								// Byte size for this page
 		} vk;
 #endif
-} virtualtexpage_t;
+} vtpage_t;
 
 typedef struct {
 #if defined(VULKAN)
@@ -611,8 +611,8 @@ typedef struct {
 			uint32_t opaquemembindscount;					// Number of opaque memory binds
 		} vk;
 #endif
-	virtualtexpage_t* pages;								// Virtual Texture members
-	buffer_t* pendingdeletedbufs;							// Pending intermediate buffer deletions
+	vtpage_t* pages;										// Virtual Texture members
+	buffer_t** pendingdeletedbufs;							// Pending intermediate buffer deletions
 	uint32_t* pendingdeletedbufcount;						// Pending intermediate buffer deletions count
 	uint32_t* pendingdeletedalloccount;						// Pending allocation deletions count
 	buffer_t* readbackbuf;									// Readback buffer, must be filled by app. Size = readbackbufsize * imagecount
@@ -679,7 +679,7 @@ typedef struct {
 } rendertargetdesc_t;
 
 typedef struct ALIGNED(rendertarget_s, 64) {
-	texture_t* tex;
+	texture_t tex;
 	union {
 #if defined(VULKAN)
 		struct {
@@ -703,7 +703,6 @@ typedef struct ALIGNED(rendertarget_s, 64) {
 	TinyImageFormat format;
 	samplecount_t samplecount;
     bool vr;
-    bool vrfoveatedrendering;
 } rendertarget_t;
 TC_COMPILE_ASSERT(sizeof(rendertarget_t) <= 32 * sizeof(uint64_t));
 
@@ -792,7 +791,7 @@ typedef struct {
 typedef struct ALIGNED(rootsignature_s, 64) {
 	uint32_t descriptorcount;						// Number of descriptors declared in the root signature layout
 	pipelinetype_t pipelinetype;					// Graphics or Compute
-	descinfo_t* descriptors;					// Array of all descriptors declared in the root signature layout
+	descinfo_t* descriptors;						// Array of all descriptors declared in the root signature layout
 	descidxmap_t* descnametoidxmap;					// Translates hash of descriptor name to descriptor index in pDescriptors array
 	union {
 #if defined(VULKAN)
@@ -972,7 +971,6 @@ typedef struct {
 } shadervar_t;
 
 typedef struct {
-	
 	char* namepool;				// single large allocation for names to reduce number of allocations
 	vertexinput_t* vertexinputs;
 	shaderresource_t* shaderresources;
@@ -984,7 +982,7 @@ typedef struct {
 	uint32_t resourcecount;
 	uint32_t varcount;
 	uint32_t threadspergroup[3];// Thread group size for compute shader
-	uint32_t mNumControlPoint;	// number of tessellation control point
+	uint32_t numcontrolpoint;	// number of tessellation control point
 } shaderreflection_t;
 
 typedef struct {
@@ -1148,7 +1146,6 @@ typedef struct {
 	TinyImageFormat depthstencilformat;
 	primitivetopology_t primitivetopo;
 	bool supportindirectcommandbuffer;
-    bool VRfoveatedrendering;
 } graphicspipelinedesc_t;
 
 typedef struct { shader_t* shader; rootsignature_t* rootsignature; } computepipelinedesc_t;
@@ -1461,12 +1458,12 @@ typedef void (*remove_queue_func)(renderer_t* renderer, queue_t* queue);
 
 typedef void (*add_swapchain_func)(renderer_t* renderer, const swapchaindesc_t* desc, swapchain_t* swapchain);
 typedef void (*remove_swapchain_func)(renderer_t* renderer, swapchain_t* swapchain);
-typedef void (*acquire_nextimage_func)(renderer_t* renderer, swapchain_t* swapchain, semaphore_t* signalsemaphore, fence_t* fence, uint32_t* image_idx);
+typedef void (*acquire_next_image_func)(renderer_t* renderer, swapchain_t* swapchain, semaphore_t* signalsemaphore, fence_t* fence, uint32_t* image_idx);
 typedef void (*queue_submit_func)(queue_t* queue, const queuesubmitdesc_t* desc);
 typedef void (*queue_present_func)(queue_t* queue, const queuepresentdesc_t* desc);
-typedef void (*queue_waitidle_func)(queue_t* queue);
-typedef void (*get_fencestatus_func)(renderer_t* renderer, fence_t* fence, fencestatus_t* status);
-typedef void (*wait_for_fences_func)(renderer_t* renderer, uint32_t count, fence_t* fences);
+typedef void (*queue_wait_idle_func)(queue_t* queue);
+typedef void (*get_fence_status_func)(renderer_t* renderer, fence_t* fence, fencestatus_t* status);
+typedef void (*wait_for_fences_func)(renderer_t* renderer, uint32_t count, fence_t** fences);
 typedef void (*toggle_vsync_func)(renderer_t* renderer, swapchain_t* swapchain);
 
 typedef void (*add_rendertarget_func)(renderer_t* renderer, const rendertargetdesc_t* desc, rendertarget_t* rt);
@@ -1508,7 +1505,7 @@ typedef void (*cmd_setstencilreferenceval_func)(cmd_t* cmd, uint32_t val);
 typedef void (*cmd_bindpipeline_func)(cmd_t* cmd, pipeline_t* pipeline);
 typedef void (*cmd_binddescset_func)(cmd_t* cmd, uint32_t index, descset_t* descset);
 typedef void (*cmd_bindpushconstants_func)(cmd_t* cmd, rootsignature_t* rootsignature, uint32_t paramindex, const void* constants);
-typedef void (*cmd_binddescsetwithrootbbvs_func)(cmd_t* cmd, uint32_t index, descset_t* descset, uint32_t count, const descdata_t* params);
+typedef void (*cmd_binddescsetwithrootcbvs_func)(cmd_t* cmd, uint32_t index, descset_t* descset, uint32_t count, const descdata_t* params);
 typedef void (*cmd_bindindexbuffer_func)(cmd_t* cmd, buffer_t* buf, uint32_t indextype, uint64_t offset);
 typedef void (*cmd_bindvertexbuffer_func)(cmd_t* cmd, uint32_t count, buffer_t* bufs, const uint32_t* strides, const uint64_t* poffsets);
 typedef void (*cmd_draw_func)(cmd_t* cmd, uint32_t vertex_count, uint32_t first_vertex);
@@ -1531,7 +1528,7 @@ typedef void (*cmd_updatevirtualtexture_func)(cmd_t* cmd, texture_t* tex, uint32
 typedef TinyImageFormat (*recommendedswapchainfmt_func)(bool hintHDR, bool hintSRGB);
 
 // Indirect Draw functions
-typedef void (*add_indirectcmdsignature_func)(renderer_t* renderer, const cmdsignaturedesc_t* desc, cmdsignature_t* cmdsignature);
+typedef void (*add_indirectcmdsignature_func)(renderer_t* renderer, const cmdsignaturedesc_t* desc, cmdsignature_t** psignature);
 typedef void (*remove_indirectcmdsignature_func)(renderer_t* renderer, cmdsignature_t* cmdsignature);
 typedef void (*cmd_execindirect_func)(cmd_t* cmd, cmdsignature_t* cmdsignature, unsigned int maxcmdcount, buffer_t* indirectbuf, uint64_t bufoffset, buffer_t* counterbuf, uint64_t counterbufoffset);
 
@@ -1561,16 +1558,127 @@ typedef void (*set_texturename_func)(renderer_t* renderer, texture_t* tex, const
 typedef void (*set_rendertargetname_func)(renderer_t* renderer, rendertarget_t* rt, const char* name);
 typedef void (*set_pipelinename_func)(renderer_t* renderer, pipeline_t* pipeline, const char* name);
 
+extern add_fence_func add_fence;
+extern remove_fence_func remove_fence;
+extern add_semaphore_func add_semaphore;
+extern remove_semaphore_func remove_semaphore;
+extern add_queue_func add_queue;
+extern remove_queue_func remove_queue;
+extern add_swapchain_func add_swapchain;
+extern remove_swapchain_func remove_swapchain;
+extern acquire_next_image_func acquire_next_image;
+extern recommendedswapchainfmt_func recommendedswapchainfmt;
+extern queue_submit_func queue_submit;
+extern queue_present_func queue_present;
+extern queue_wait_idle_func queue_wait_idle;
+extern get_fence_status_func get_fence_status;
+extern wait_for_fences_func wait_for_fences;
+extern toggle_vsync_func toggle_vsync;
+
+extern add_rendertarget_func add_rendertarget;
+extern remove_rendertarget_func remove_rendertarget;
+extern add_sampler_func add_sampler;
+extern remove_sampler_func remove_sampler;
+extern add_shaderbinary_func add_shaderbinary;
+extern remove_shader_func remove_shader;
+extern add_rootsignature_func add_rootsignature;
+extern remove_rootsignature_func remove_rootsignature;
+extern add_pipeline_func add_pipeline;
+extern remove_pipeline_func remove_pipeline;
+extern add_pipelinecache_func add_pipelinecache;
+extern get_pipelinecachedata_func get_pipelinecachedata;
+extern remove_pipelinecache_func remove_pipelinecache;
+extern add_descriptorset_func add_descriptorset;
+extern remove_descriptorset_func remove_descriptorset;
+extern update_descriptorset_func update_descriptorset;
+
+extern add_cmdpool_func add_cmdpool;
+extern remove_cmdpool_func remove_cmdpool;
+extern reset_cmdpool_func reset_cmdpool;
+extern add_cmds_func add_cmds;
+extern remove_cmds_func remove_cmds;
+
+extern cmd_begin_func cmd_begin;
+extern cmd_end_func cmd_end;
+extern cmd_bindrendertargets_func cmd_bindrendertargets;
+extern cmd_setshadingrate_func cmd_setshadingrate;
+extern cmd_setviewport_func cmd_setviewport;
+extern cmd_setscissor_func cmd_setscissor;
+extern cmd_setstencilreferenceval_func cmd_setstencilreferenceval;
+extern cmd_bindpipeline_func cmd_bindpipeline;
+extern cmd_binddescset_func cmd_binddescset;
+extern cmd_binddescsetwithrootcbvs_func cmd_binddescsetwithrootcbvs;
+extern cmd_bindpushconstants_func cmd_bindpushconstants;
+extern cmd_bindindexbuffer_func cmd_bindindexbuffer;
+extern cmd_bindvertexbuffer_func cmd_bindvertexbuffer;
+extern cmd_draw_func cmd_draw;
+extern cmd_drawinstanced_func cmd_drawinstanced;
+extern cmd_drawindexed_func cmd_drawindexed;
+extern cmd_drawindexedinstanced_func cmd_drawindexedinstanced;
+extern cmd_dispatch_func cmd_dispatch;
+extern cmd_resourcebarrier_func cmd_resourcebarrier;
+extern cmd_updatevirtualtexture_func cmd_updatevirtualtexture;
+extern add_indirectcmdsignature_func add_indirectcmdsignature;
+extern remove_indirectcmdsignature_func remove_indirectcmdsignature;
+extern cmd_execindirect_func cmd_execindirect;
+
+extern get_timestampfreq_func get_timestampfreq;
+extern add_querypool_func add_querypool;
+extern remove_querypool_func remove_querypool;
+extern cmd_resetquerypool_func cmd_resetquerypool;
+extern cmd_beginquery_func cmd_beginquery;
+extern cmd_endquery_func cmd_endquery;
+extern cmd_resolvequery_func cmd_resolvequery;
+
+extern get_memstats_func get_memstats;
+extern get_memuse_func get_memuse;
+extern free_memstats_func free_memstats;
+
+extern cmd_begindebugmark_func cmd_begindebugmark;
+extern cmd_enddebugmark_func cmd_enddebugmark;
+extern cmd_adddebugmark_func cmd_adddebugmark;
+extern cmd_writemark_func cmd_writemark;
+
+extern set_buffername_func set_buffername;
+extern set_texturename_func set_texturename;
+extern set_rendertargetname_func set_rendertargetname;
+extern set_pipelinename_func set_pipelinename;
+
 
 void renderer_init(const char* app_name, const rendererdesc_t* desc_func, renderer_t* renderer);
 void renderer_exit(renderer_t* renderer);
 
 uint32_t descindexfromname(const rootsignature_t* rootsignature, const char* name);
 
-static inline bool is_rootcbv(const char* name) {
+inline bool is_rootcbv(const char* name) {
 	char lower[MAX_RESOURCE_NAME_LENGTH] = { 0 };
 	uint32_t len = (uint32_t)strlen(name);
 	for (uint32_t i = 0; i < len; ++i)
 		lower[i] = tolower(name[i]);
 	return strstr(lower, "rootcbv");
 }
+
+// Internal Resource Load Functions
+typedef void (*add_buffer_func)(renderer_t* renderer, const bufferdesc_t* desc, buffer_t* buf);
+typedef void (*remove_buffer_func)(renderer_t* renderer, buffer_t* buf);
+typedef void (*map_buffer_func)(renderer_t* renderer, buffer_t* buf, range_t* range);
+typedef void (*unmap_buffer_func)(renderer_t* renderer, buffer_t* buf);
+typedef void (*cmd_updatebuffer_func)(cmd_t* cmd, buffer_t* buf, uint64_t dstoffset, buffer_t* srcbuf, uint64_t srcoffset, uint64_t size);
+typedef void (*cmd_updatesubresource_func)(cmd_t* cmd, texture_t* tex, buffer_t* srcbuf, const struct subresourcedatadesc_s* desc);
+typedef void (*cmd_copysubresource_func)(cmd_t* cmd, buffer_t* dstbuf, texture_t* tex, const struct subresourcedatadesc_s* desc);
+typedef void (*add_texture_func)(renderer_t* renderer, const texturedesc_t* desc, texture_t* tex);
+typedef void (*remove_texture_func)(renderer_t* renderer, texture_t* tex);
+typedef void (*add_virtualtexture_func)(cmd_t* cmd, const texturedesc_t* desc, texture_t* tex, void* imagedata);
+typedef void (*remove_virtualtexture_func)(renderer_t* renderer, virtualtexture_t* tex);
+
+extern add_buffer_func add_buffer;
+extern remove_buffer_func remove_buffer;
+extern map_buffer_func map_buffer;
+extern unmap_buffer_func unmap_buffer;
+extern cmd_updatebuffer_func cmd_updatebuffer;
+extern cmd_updatesubresource_func cmd_updatesubresource;
+extern cmd_copysubresource_func cmd_copysubresource;
+extern add_texture_func add_texture;
+extern remove_texture_func remove_texture;
+extern add_virtualtexture_func add_virtualtexture;
+extern remove_virtualtexture_func remove_virtualtexture;

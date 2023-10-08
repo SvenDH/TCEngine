@@ -7,6 +7,7 @@
 #define VULKAN
 
 #include <volk.h>
+#include <tinyimageformat_apis.h>
 
 #define TARGET_VULKAN_API_VERSION VK_API_VERSION_1_1
 
@@ -21,9 +22,8 @@
 #define CHECK_VKRESULT(exp)                                                      \
 	{                                                                            \
 		VkResult vkres = (exp);                                                  \
-		if (VK_SUCCESS != vkres)                                                 \
-		{                                                                        \
-			TRACE(TC_ERROR, "%s: FAILED with VkResult: %d", #exp, vkres); \
-			TC_ASSERT(false);                                                       \
+		if (VK_SUCCESS != vkres) {                                               \
+			TRACE(TC_ERROR, "%s: FAILED with VkResult: %d", #exp, vkres); 		 \
+			TC_ASSERT(false);                                                    \
 		}                                                                        \
 	}

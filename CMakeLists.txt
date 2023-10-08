@@ -88,6 +88,7 @@ include_directories(deps/volk)
 
 add_subdirectory(deps/VulkanMemoryAllocator)
 include_directories(deps/VulkanMemoryAllocator/include)
+find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
 # Add boost.context as static lib
 include_directories(deps/tiny_imageformat)

@@ -78,9 +78,22 @@
 #endif
 
 /* Utility macros: */
-#define SGN(_v) (((_v) < 0) ? (-1.0) : (+1.0))
+#define CONCAT(x, y) CONCAT_IMPL(x,y)
+#define CONCAT_IMPL(x,y) x##y
 
-#define CONCAT_IMPL( x, y ) x##y
+//#define SWAP(x, y) do { \
+//    unsigned char swap_temp[sizeof(x) == sizeof(y) ? (signed)sizeof(x) : -1]; \
+//    memcpy(swap_temp,&y,sizeof(x)); \
+//    memcpy(&y,&x,       sizeof(x)); \
+//    memcpy(&x,swap_temp,sizeof(x)); \
+//} while(0)
+
+#define SWAP(pX, pY, tmp, copy) (	\
+	copy((tmp), (pX)),			\
+	copy((pX), (pY)),			\
+	copy((pY), (tmp)),			\
+	(void)0)
+
 #define MACRO_CONCAT( x, y ) CONCAT_IMPL( x, y )
 #define UNIQUE_INDEX(_i) MACRO_CONCAT(i, __COUNTER__)
 #define INDEX(_i) MACRO_CONCAT(_i,__LINE__)
@@ -105,13 +118,6 @@
 #else
 #define TC_ASSERT(x, ...)
 #endif
-
-#define SWAP(x, y) do { \
-    unsigned char swap_temp[sizeof(x) == sizeof(y) ? (signed)sizeof(x) : -1]; \
-    memcpy(swap_temp,&y,sizeof(x)); \
-    memcpy(&y,&x,       sizeof(x)); \
-    memcpy(&x,swap_temp,sizeof(x)); \
-} while(0)
 
 #define container_of(ptr, type, member) (type *)( (char *)(ptr) - offsetof(type,member) )
 

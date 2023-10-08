@@ -8,6 +8,8 @@
 #include <math.h>
 #include <float.h>
 
+#define SGN(_v) (((_v) < 0) ? (-1.0) : (+1.0))
+
 #define VEC2_ZERO (vec2){ 0.0f, 0.0f }
 #define MAT3_ZERO { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } }
 #define MAT3_IDENTITY { { 1.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f } }
@@ -17,9 +19,6 @@
 #define QUICKSORT_THRESHOLD 30
 #define SIMPLESORT_THRESHOLD 4
 #define TMP_BUF_STACK_SIZE 256	
-
-#define CONCAT(x, y) CONCAT_IMPL(x,y)
-#define CONCAT_IMPL(x,y) x##y
 
 #define CREATE_TEMP_NUMERIC(type, name) \
 	type CONCAT(name, Buf);				\
@@ -38,12 +37,6 @@
 #define COPY_NUMERIC(pDst, pSrc) (*(pDst) = *(pSrc), (void)0)
 #define COPY_GENERIC(pDst, pSrc) (memcpy(pDst, pSrc, memberSize), (void)0)
 #define COPY_STRUCT(pDst, pSrc) (memcpy(pDst, pSrc, sizeof(*pDst)), (void)0)
-
-#define SWAP(pX, pY, tmp, copy) (	\
-	copy((tmp), (pX)),			\
-	copy((pX), (pY)),			\
-	copy((pY), (tmp)),			\
-	(void)0)
 
 #define PTR_INC_GENERIC(ptr) ((ptr) += memberSize)
 #define PTR_DEC_GENERIC(ptr) ((ptr) -= memberSize)
@@ -516,11 +509,6 @@ inline int rect_segment(rect2 a, vec2 from, vec2 to, vec2 normal, vec2 pos) {
 		pos[1] = from[1] + rel[1] * min;
 	}
 	return 1;
-}
-
-inline void rect_correct(rect2 a) {
-	SWAP(a[0], a[2]);
-	SWAP(a[1], a[3]);
 }
 
 inline void irect_cpy(irect2 d, irect2 s) {

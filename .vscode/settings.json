@@ -51,6 +51,7 @@
         "iosfwd": "c",
         "algorithm": "c",
         "xhash": "c",
-        "initializer_list": "c"
+        "initializer_list": "c",
+        "cmath": "c"
     }
 }
