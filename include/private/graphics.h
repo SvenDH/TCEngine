@@ -1210,7 +1210,7 @@ typedef struct {
 } swapchaindesc_t;
 
 typedef struct {
-	rendertarget_t** rts;			// Render targets created from the swapchain back buffers
+	rendertarget_t* rts;			// Render targets created from the swapchain back buffers
 #if defined(VULKAN)
 		struct {
 			VkQueue presentqueue;	// Present queue if one exists (queuePresent will use this queue if the hardware has a dedicated present queue)
@@ -1645,8 +1645,8 @@ extern set_rendertargetname_func set_rendertargetname;
 extern set_pipelinename_func set_pipelinename;
 
 
-void renderer_init(const char* app_name, const rendererdesc_t* desc_func, renderer_t* renderer);
-void renderer_exit(renderer_t* renderer);
+void tc_renderer_init(const char* app_name, const rendererdesc_t* desc_func, renderer_t* renderer);
+void tc_renderer_exit(renderer_t* renderer);
 
 uint32_t descindexfromname(const rootsignature_t* rootsignature, const char* name);
 

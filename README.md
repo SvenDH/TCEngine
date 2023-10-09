@@ -9,3 +9,10 @@ https://github.com/chriso/intern
 Libraries to be included:
 https://github.com/shibatch/sleef
 https://github.com/lz4/lz4/blob/dev/lib/lz4.c
+
+
+Compile shaders:
+```bash
+cd script
+.\compile.ps1 "..\\shaders"
+```

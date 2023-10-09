@@ -146,7 +146,7 @@ void init_context() {
 	context->allocator = tc_mem->sys;
 	slab_create(&context->pool, context->allocator, CHUNK_SIZE);
 	
-	uv_replace_allocator(mem_malloc, mem_realloc, mem_calloc, mem_free);
+	//uv_replace_allocator(mem_malloc, mem_realloc, mem_calloc, mem_free);
 
 	if (!glfwInit()) TRACE(LOG_ERROR, "Failed to initialie GLFW");
 }

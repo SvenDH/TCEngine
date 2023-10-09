@@ -145,7 +145,7 @@ static void exit_rendererapi(renderer_t* renderer, const renderertype_t api)
 	}
 }
 
-void renderer_init(const char* app_name, const rendererdesc_t* desc, renderer_t* renderer)
+void tc_renderer_init(const char* app_name, const rendererdesc_t* desc, renderer_t* renderer)
 {
 	TC_ASSERT(renderer && desc);
 	init_rendererapi(app_name, desc, renderer, selected_api);
@@ -153,7 +153,7 @@ void renderer_init(const char* app_name, const rendererdesc_t* desc, renderer_t*
 	//	setextendedsettings(desc->extendedsettings, (*renderer)->activegpusettings);
 }
 
-void renderer_exit(renderer_t* renderer)
+void tc_renderer_exit(renderer_t* renderer)
 {
 	TC_ASSERT(renderer);
 	exit_rendererapi(renderer, selected_api);

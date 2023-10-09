@@ -62,15 +62,14 @@ set(GLFW_USE_WAYLAND ${USE_WAYLAND} CACHE BOOL "" FORCE)
 add_subdirectory(deps/glfw)
 include_directories(deps/glfw/include)
 
-# Add luajit as static lib
-#include(deps/luajit.cmake)
-#include_directories(deps/luajit/src)
-#set(LUAJIT luajit-5.1)
-
 # Add boost.context as static lib
 include_directories(deps/deboost.context/include)
 add_subdirectory(deps/deboost.context)
 
+# Add luajit as static lib
+#include(deps/luajit.cmake)
+#include_directories(deps/luajit/src)
+#set(LUAJIT luajit-5.1)
 # Add zlib
 #include_directories(ZLIB deps/zlib)
 #find_package(ZLIB)
@@ -88,7 +87,6 @@ include_directories(deps/volk)
 
 include_directories(deps/VulkanMemoryAllocator/include)  
 add_subdirectory(deps/VulkanMemoryAllocator)
-#find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
 include_directories(deps/tiny_imageformat)
 

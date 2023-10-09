@@ -21,9 +21,6 @@
 #define MTUNER_FREE(_handle, _ptr)
 #endif
 
-
-
-
 static
 tc_allocator_i allocator_create_child(const tc_allocator_i* parent, const char* name)
 {

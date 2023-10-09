@@ -2474,7 +2474,7 @@ void vk_add_swapchain(renderer_t* r, const swapchaindesc_t* desc, swapchain_t* s
 	TC_ASSERT(numimages >= desc->imagecount);
 	VkImage* images = (VkImage*)alloca(numimages * sizeof(VkImage));
 	CHECK_VKRESULT(vkGetSwapchainImagesKHR(r->vk.device, vkSwapchain, &numimages, images));
-	swapchain->rts = (rendertarget_t**)tc_calloc(1, numimages * sizeof(rendertarget_t*) + sizeof(swapchaindesc_t));
+	swapchain->rts = (rendertarget_t**)tc_calloc(1, numimages * sizeof(rendertarget_t) + sizeof(swapchaindesc_t));
 	TC_ASSERT(swapchain->rts);
 	swapchain->vk.desc = (swapchaindesc_t*)(swapchain->rts + numimages);
 
@@ -2509,7 +2509,7 @@ void vk_remove_swapchain(renderer_t* r, swapchain_t* swapchain)
 {
 	TC_ASSERT(r && swapchain);
 	for (uint32_t i = 0; i < swapchain->imagecount; i++)
-		remove_rendertarget(r, swapchain->rts[i]);
+		remove_rendertarget(r, &swapchain->rts[i]);
 
 	vkDestroySwapchainKHR(r->vk.device, swapchain->vk.swapchain, &alloccbs);
 	vkDestroySurfaceKHR(r->vk.instance, swapchain->vk.surface, &alloccbs);
