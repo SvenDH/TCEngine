@@ -85,23 +85,28 @@ static void* main_fiber(void* args) {
 		add_semaphore(&renderer, &rendercompletesemaphores[i]);
 	}
 	
-	const char* vert_file = "C:\\Users\\denha\\Desktop\\TCEngine\\shaders\\Binary\\base.vert.spv";
+	const char* vert_file = "..\\..\\shaders\\Binary\\base.vert.spv";
 
 	stat_t stat = { 0 };
-	//await(tc_os->stat(&stat, vert_file));
+	await(tc_os->stat(&stat, vert_file));
+	int size = stat.size;
+	char* tmp = alloca(size);
+	int64_t file = await(tc_os->open(vert_file, FILE_READ));
+	await(tc_os->read((fd_t){ .handle=file }, tmp, size, 0));
 
-	//TRACE(LOG_INFO, "%i", (int)stat.size);
+	shader_t shader;
+	binaryshaderdesc_t shaderdesc = {
+		.stages = SHADER_STAGE_VERT,
+	};
+	shaderdesc.vert.bytecode = tmp;
+	shaderdesc.vert.bytecodesize = size;
 
-	//int64_t file = await(tc_os->open(vert_file, FILE_READ));
+	add_shaderbinary(&renderer, &, &shader);
 
-	//char tmp[1024] = { 0 };
-
-	//await(tc_os->read((fd_t){ .handle=file }, tmp, 1024, 0));
-
-	//TRACE(LOG_INFO, "%s", tmp);
+	TRACE(LOG_INFO, "%x", tmp);
 	
+	remove_swapchain(&renderer, &swapchain);
 	tc_os->destroy_window(window);
-	//remove_swapchain(&renderer, &swapchain);
 
 	return 0;
 }
