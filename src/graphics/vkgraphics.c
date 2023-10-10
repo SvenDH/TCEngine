@@ -10,8 +10,6 @@
 #include <tinyimageformat_base.h>
 #include <tinyimageformat_query.h>
 
-//#define VK_DEBUG_LOG_EXTENSIONS 1
-//#define _ENABLE_DEBUG_UTILS_EXTENSION
 
 static _Atomic uint32_t rtids = 1;
 
@@ -3623,35 +3621,35 @@ void vk_add_shaderbinary(renderer_t* r, const binaryshaderdesc_t* desc, shader_t
 			switch (mask) {
 				case SHADER_STAGE_VERT:
 					vk_create_shaderreflection((const uint8_t*)desc->vert.bytecode, (uint32_t)desc->vert.bytecodesize, mask, &reflections[counter]);
-					info.codeSize = desc->vert.bytecodesize;
+					info.codesize = desc->vert.bytecodesize;
 					info.pCode = (const uint32_t*)desc->vert.bytecode;
 					stage = &desc->vert;
 					CHECK_VKRESULT(vkCreateShaderModule(r->vk.device, &info, &alloccbs, &(shader->vk.shadermodules[counter])));
 					break;
 				case SHADER_STAGE_TESC:
 					vk_create_shaderreflection((const uint8_t*)desc->hull.bytecode, (uint32_t)desc->hull.bytecodesize, mask, &reflections[counter]);
-					info.codeSize = desc->hull.bytecodesize;
+					info.codesize = desc->hull.bytecodesize;
 					info.pCode = (const uint32_t*)desc->hull.bytecode;
 					stage = &desc->hull;
 					CHECK_VKRESULT(vkCreateShaderModule(r->vk.device, &info, &alloccbs, &(shader->vk.shadermodules[counter])));
 					break;
 				case SHADER_STAGE_TESE:
 					vk_create_shaderreflection((const uint8_t*)desc->domain.bytecode, (uint32_t)desc->domain.bytecodesize, mask, &reflections[counter]);
-					info.codeSize = desc->domain.bytecodesize;
+					info.codesize = desc->domain.bytecodesize;
 					info.pCode = (const uint32_t*)desc->domain.bytecode;
 					stage = &desc->domain;
 					CHECK_VKRESULT(vkCreateShaderModule(r->vk.device, &info, &alloccbs, &(shader->vk.shadermodules[counter])));
 					break;
 				case SHADER_STAGE_GEOM:
 					vk_create_shaderreflection((const uint8_t*)desc->geom.bytecode, (uint32_t)desc->geom.bytecodesize, mask, &reflections[counter]);
-					info.codeSize = desc->geom.bytecodesize;
+					info.codesize = desc->geom.bytecodesize;
 					info.pCode = (const uint32_t*)desc->geom.bytecode;
 					stage = &desc->geom;
 					CHECK_VKRESULT(vkCreateShaderModule(r->vk.device, &info, &alloccbs,	&(shader->vk.shadermodules[counter])));
 					break;
 				case SHADER_STAGE_FRAG:
 					vk_create_shaderreflection((const uint8_t*)desc->frag.bytecode, (uint32_t)desc->frag.bytecodesize, mask, &reflections[counter]);
-					info.codeSize = desc->frag.bytecodesize;
+					info.codesize = desc->frag.bytecodesize;
 					info.pCode = (const uint32_t*)desc->frag.bytecode;
 					stage = &desc->frag;
 					CHECK_VKRESULT(vkCreateShaderModule(r->vk.device, &info, &alloccbs, &(shader->vk.shadermodules[counter])));
@@ -3661,7 +3659,7 @@ void vk_add_shaderbinary(renderer_t* r, const binaryshaderdesc_t* desc, shader_t
 				case SHADER_STAGE_RAYTRACING:
 #endif
 					vk_create_shaderreflection((const uint8_t*)desc->comp.bytecode, (uint32_t)desc->comp.bytecodesize, mask, &reflections[counter]);
-					info.codeSize = desc->comp.bytecodesize;
+					info.codesize = desc->comp.bytecodesize;
 					info.pCode = (const uint32_t*)desc->comp.bytecode;
 					stage = &desc->comp;
 					CHECK_VKRESULT(vkCreateShaderModule(r->vk.device, &info, &alloccbs, &(shader->vk.shadermodules[counter])));
