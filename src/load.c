@@ -9,11 +9,14 @@
 #include "tinyimageformat_apis.h"
 
 
+#define FS_MAX_PATH 512
+
+
 static const char* get_renderer_API_name()
 {
 	switch (selected_api) {
 #if defined(VULKAN)
-	case RENDERER_API_VULKAN: return "VULKAN";
+	case RENDERER_VULKAN: return "VULKAN";
 #endif
 	default: 
 	TC_ASSERT(false && "Renderer API name not defined");
@@ -23,64 +26,9 @@ static const char* get_renderer_API_name()
 
 
 #if defined(VULKAN)
-#if defined(__ANDROID__)
-// Android: Use shaderc to compile glsl to spirV
-void vk_compileShader(
-	renderer_t* r, shaderstage_t stage, uint32_t codesize, const char* code, const char* outfile, uint32_t macrocount,
-	shadermacro_t* macros, binaryshaderstagedesc_t* out, ShaderByteCodeBuffer* pShaderByteCodeBuffer, const char* entrypoint) {
-	VkPhysicalDeviceProperties properties = {};
-	vkGetPhysicalDeviceProperties(r->mVulkan.pVkActiveGPU, &properties);
-	uint32_t version = properties.apiVersion < TARGET_VULKAN_API_VERSION ? properties.apiVersion : TARGET_VULKAN_API_VERSION;
-	switch (version) {
-	case VK_API_VERSION_1_0:
-		version = shaderc_env_version_vulkan_1_0;
-		break;
-	case VK_API_VERSION_1_1:
-		version = shaderc_env_version_vulkan_1_1;
-		break;
-	default:
-		TRACE(LOG_ERROR, "Unknown Vulkan version %u", version);
-		TC_ASSERT(false);
-		version = shaderc_env_version_vulkan_1_0;
-		break;
-	}
-
-	// compile into spir-V shader
-	shaderc_compiler_t compiler = shaderc_compiler_initialize();
-	shaderc_compile_options_t options = shaderc_compile_options_initialize();
-	for (uint32_t i = 0; i < macrocount; i++) {
-		shaderc_compile_options_add_macro_definition(
-			options, macros[i].definition, strlen(macros[i].definition), macros[i].value, strlen(macros[i].value));
-	}
-
-	const char* android_definition = "TARGET_ANDROID";
-	shaderc_compile_options_add_macro_definition(options, android_definition, strlen(android_definition), "1", 1);
-	shaderc_compile_options_set_target_env(options, shaderc_target_env_vulkan, version);
-
-	shaderc_compilation_result_t spvShader = shaderc_compile_into_spv(compiler, code, codesize, getShadercShaderType(stage), "shaderc_error", entrypoint ? entrypoint : "main", options);
-	shaderc_compilation_status spvStatus = shaderc_result_get_compilation_status(spvShader);
-	if (spvStatus != shaderc_compilation_status_success)
-	{
-		const char* errorMessage = shaderc_result_get_error_message(spvShader);
-		LOGF(LogLevel::eERROR, "Shader compiling failed! with status %s", errorMessage);
-		abort();
-	}
-
-	// Resize the byteCode block based on the compiled shader size
-	out->mByteCodeSize = shaderc_result_get_length(spvShader);
-	out->pByteCode = allocShaderByteCode(pShaderByteCodeBuffer, 1, out->mByteCodeSize, "");
-	memcpy(out->pByteCode, shaderc_result_get_bytes(spvShader), out->mByteCodeSize);
-
-	// Release resources
-	shaderc_result_release(spvShader);
-	shaderc_compiler_release(compiler);
-}
-#else
-// PC: Vulkan has no builtin functions to compile source to spirv
-// So we call the glslangValidator tool located inside VulkanSDK on user machine to compile the glsl code to spirv
 void vk_compileShader(
 	renderer_t* r, shadertarget_t target, shaderstage_t stage, const char* filename, const char* outfile, uint32_t macrocount,
-	shadermacro_t* macros, binaryshaderstagedesc_t out, ShaderByteCodeBuffer* pShaderByteCodeBuffer, const char* entrypoint)
+	shadermacro_t* macros, binaryshaderstagedesc_t out, const char* entrypoint)
 {
 	bstring line = bempty();
 	balloc(&line, 512);
@@ -138,9 +86,8 @@ void vk_compileShader(
 	else {
 		FileStream fh = {};
 		// If for some reason the error file could not be created just log error msg
-		if (!fsOpenStreamFromPath(RD_SHADER_BINARIES, logFileName, FM_READ_BINARY, NULL, &fh)) {
+		if (!fsOpenStreamFromPath(RD_SHADER_BINARIES, logFileName, FM_READ_BINARY, NULL, &fh))
 			TRACE(LOG_ERROR, "Failed to compile shader %s", filePath);
-		}
 		else {
 			size_t size = fsGetStreamFileSize(&fh);
 			if (size) {
@@ -180,7 +127,7 @@ bool load_shader_stage_byte_code(
 	if (rendererApi[0] != '\0')
 		bformat(&fileNameAPI, "%s/%s", rendererApi, desc->pFileName);
 	else
-		bcatcstr(&fileNameAPI, desc->pFileName);
+		bcatcstr(&fileNameAPI, desc->fileName);
 
 	// If there are no macros specified there's no change to the shader source, we can use the binary compiled by FSL offline.
 	if (macrocount == 0) {
@@ -272,13 +219,9 @@ void load_shader(renderer_t* r, const shaderloaddesc_t* desc, shader_t* shader)
 		return;
 	}
 	binaryshaderdesc_t bindesc = { 0 };
-	shaderbytecodebuffer_t shaderByteCodeBuffer = { 0 };
-	char bytecodeStack[ShaderByteCodeBuffer::kStackSize] = { 0 };
-	shaderByteCodeBuffer.pStackMemory = bytecodeStack;
-
 	shaderstage_t stages = SHADER_STAGE_NONE;
 	for (uint32_t i = 0; i < SHADER_STAGE_COUNT; i++) {
-		if (desc->mStages[i].pFileName && desc->mStages[i].pFileName[0] != 0) {
+		if (desc->stages[i].filename && desc->stages[i].filename[0] != 0) {
 			shaderstage_t stage;
 			binaryshaderstagedesc_t* stage = NULL;
 			char ext[FS_MAX_PATH] = { 0 };
@@ -288,10 +231,10 @@ void load_shader(renderer_t* r, const shaderloaddesc_t* desc, shader_t* shader)
 		}
 	}
 	for (uint32_t i = 0; i < SHADER_STAGE_COUNT; i++) {
-		if (desc->mStages[i].pFileName && desc->mStages[i].pFileName[0] != 0) {
+		if (desc->stages[i].pFileName && desc->mStages[i].pFileName[0] != 0) {
 			const char* fileName = desc->mStages[i].pFileName;
 			shaderstage_t stage;
-			Binaryshaderstage_tDesc* pStage = NULL;
+			binaryshaderstagedesc_t* pStage = NULL;
 			char ext[FS_MAX_PATH] = { 0 };
 			fsGetPathExtension(fileName, ext);
 			if (find_shader_stage(ext, &bindesc, &pStage, &stage)) {
