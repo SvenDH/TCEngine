@@ -140,7 +140,7 @@ static void* mem_realloc(void* ptr, size_t size) {
 	return ptr;
 }
 
-void init_context() {
+void init_context(void) {
 	context = tc_malloc(sizeof(struct context_t));
 	memset(context, 0, sizeof(struct context_t));
 	context->allocator = tc_mem->sys;
@@ -160,7 +160,7 @@ void os_cb(uv_fs_t* req) {
 		if (handle->buf.base) {
 			uv_dirent_t ent;
 			char* paths = NULL;
-			uint32_t i = 0;
+			size_t i = 0;
 			while (uv_fs_scandir_next(req, &ent) != UV_EOF) {
 				if (ent.name) {
 					size_t len = strlen(ent.name) + 1;
@@ -169,7 +169,7 @@ void os_cb(uv_fs_t* req) {
 					i += len;
 				}
 			}
-			handle->results = paths;
+			handle->results = (int64_t)paths;
 		}
 	}
 	else if (req->fs_type == UV_FS_STAT) {
@@ -321,7 +321,7 @@ tc_thread_t os_create_thread(tc_thread_f entry, void* data, uint32_t stack_size)
 		.stack_size = stack_size,
 	};
 	uv_thread_create_ex(&tid, &opts, entry, data);
-	return tid;
+	return (tc_thread_t)tid;
 }
 
 uint32_t os_cpu_id() {
@@ -388,7 +388,7 @@ tc_thread_t os_get_current_thread() {
 #endif
 }
 
-tc_window_t os_create_window(size_t width, size_t height, const char* title)
+tc_window_t os_create_window(int width, int height, const char* title)
 {
 	uv_once(&init, init_context);
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -400,6 +400,42 @@ tc_window_t os_create_window(size_t width, size_t height, const char* title)
 void os_destroy_window(tc_window_t window)
 {
 	glfwDestroyWindow(window);
+}
+
+_os_process_exit
+
+int os_system_run(const char* cmd, const char** args, size_t numargs, const char* stdoutpath)
+{
+	uv_process_t child_req;
+	char** pargs = (char**)alloca((numargs + 2) * sizeof(char*));
+	pargs[0] = cmd;
+	for (int i = 0; i < numargs; i++) pargs[i+1] = args[i];
+	pargs[numargs+1] = NULL;
+	uv_stdio_container_t child_stdio[3];
+    child_stdio[0].flags = UV_IGNORE;
+	if (stdoutpath) {
+		uv_pipe_t apipe;
+		 uv_fs_t file_req;
+    	int fd = uv_fs_open(tc_eventloop(), &file_req, stdoutpath, O_CREAT | O_RDWR, 0644, NULL);
+		uv_pipe_init(tc_eventloop(), &apipe, 0);
+    	uv_pipe_open(&apipe, fd);
+		child_stdio[1].flags = UV_CREATE_PIPE | UV_READABLE_PIPE;
+		child_stdio[1].data.stream = (uv_stream_t *) &apipe;
+	}
+	else child_stdio[1].flags = UV_IGNORE;
+    child_stdio[2].flags = UV_INHERIT_FD;
+    child_stdio[2].data.fd = 2;
+
+	tc_fut_t* fut = tc_fut_new(context->allocator, 1, req, 1);
+	tc_fut_decr(handle->future);
+
+	uv_process_options_t options = {
+		.exit_cb = NULL,
+		.file = cmd,
+		.args = pargs,
+		.stdio_count = 3
+	};
+	uv_spawn(tc_eventloop(), &child_req, &options);
 }
 
 tc_os_i* tc_os = &(tc_os_i) {

@@ -476,7 +476,6 @@ typedef struct descidxmap_s descidxmap_t;
 typedef struct accelstruct_s accelstruct_t;
 typedef struct queue_s queue_t;
 typedef struct raytracing_s raytracing_t;
-typedef struct renderercontext_s renderercontext_t;
 typedef struct renderer_s renderer_t;
 
 /* Resource bariers */
@@ -1247,7 +1246,6 @@ typedef struct {
 	shadertarget_t shadertarget;
 	gpumode_t gpumode;
 	extendedsettings_t* extendedsettings;	// Apps may want to query additional state for their applications. That information is transferred through here.
-	renderercontext_t* context;				// Required when creating unlinked multiple renderers. Optional otherwise, can be used for explicit GPU selection.
 	uint32_t gpuindex;
 	bool enablegpubasedvalidation;			// This results in new validation not possible during API calls on the CPU, by creating patched shaders that have validation added directly to the shader. However, it can slow things down a lot, especially for applications with numerous PSOs. Time to see the first render frame may take several minutes
 } rendererdesc_t;
@@ -1356,31 +1354,6 @@ typedef struct ALIGNED(renderer_s, 64) {
 	char* apiname;
 } renderer_t;
 TC_COMPILE_ASSERT(sizeof(renderer_t) <= 24 * sizeof(uint64_t)); // 3 cache lines
-
-typedef struct {
-#if defined(VULKAN)
-		struct {
-			VkPhysicalDevice gpu;
-			VkPhysicalDeviceProperties2 gpuprops;
-		} vk;
-#endif
-	gpusettings_t settings;
-} gpuinfo_t;
-
-typedef struct renderercontext_s {
-#if defined(VULKAN)
-		struct {
-			VkInstance instance;
-#ifdef ENABLE_DEBUG_UTILS_EXTENSION
-			VkDebugUtilsMessengerEXT debugutilsmessenger;
-#else
-			VkDebugReportCallbackEXT debugreport;
-#endif
-		} vk;
-#endif
-	gpuinfo_t gpus[MAX_MULTIPLE_GPUS];
-	uint32_t gpucount;
-} renderercontext_t;
 
 // Indirect command structure define
 typedef struct {

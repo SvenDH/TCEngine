@@ -17,6 +17,7 @@ typedef void(*tc_thread_f)(void*);
 
 #define TC_INVALID_FILE 0xcfffffff
 
+
 typedef enum {
     FILE_READ = 0,
     FILE_WRITE = 1 << 0,
@@ -104,9 +105,13 @@ typedef struct tc_os_i {
 
     void (*set_thread_affinity)(tc_thread_t thread, uint32_t cpu_num);
 
-    tc_window_t (*create_window)(size_t width, size_t height, const char* title);
+    tc_window_t (*create_window)(int width, int height, const char* title);
 
     void (*destroy_window)(tc_window_t window);
+
+    int (*system_run)(const char* cmd, const char** args, size_t numargs, const char* stdoutpath);
+
+    const char* (*get_env)(const char* name);
 
 } tc_os_i;
 

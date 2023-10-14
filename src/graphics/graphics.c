@@ -108,7 +108,7 @@ remove_texture_func remove_texture;
 add_virtualtexture_func add_virtualtexture;
 remove_virtualtexture_func remove_virtualtexture;
 
-static renderertype_t selected_api = RENDERER_VULKAN;
+renderertype_t selected_api = RENDERER_VULKAN;
 
 #if defined(VULKAN)
 extern void init_vulkanrenderer(const char* appname, const rendererdesc_t* desc, renderer_t* renderer);

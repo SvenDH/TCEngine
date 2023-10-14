@@ -55,6 +55,11 @@
         "cmath": "c",
         "optional": "c",
         "xtr1common": "c",
-        "map": "c"
+        "map": "c",
+        "*.ttml": "xml",
+        "*.ttss": "css",
+        "tinyimageformat_bits.h": "c",
+        "bstrlib.h": "c",
+        "tinyimageformat_base.h": "c"
     }
 }

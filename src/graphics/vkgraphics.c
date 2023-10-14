@@ -1746,18 +1746,8 @@ static bool add_device(const rendererdesc_t* desc, renderer_t* r)
 
 	if (r->linkednodecount < 2 && r->gpumode == GPU_MODE_LINKED)
 		r->gpumode = GPU_MODE_SINGLE;
-	if (desc->context == NULL) {
-		if (!_select_best_gpu(r)){
-			return false;
-		}
-	} else {
-		TC_ASSERT(desc->gpuindex < desc->context->gpucount);
-		r->vk.activegpu = desc->context->gpus[desc->gpuindex].vk.gpu;
-		r->vk.activegpuprops = (VkPhysicalDeviceProperties2*)tc_calloc(1, sizeof(VkPhysicalDeviceProperties2));
-		r->activegpusettings = (gpusettings_t*)tc_calloc(1, sizeof(gpusettings_t));
-		*r->vk.activegpuprops = desc->context->gpus[desc->gpuindex].vk.gpuprops;
-		r->vk.activegpuprops->pNext = NULL;
-		*r->activegpusettings = desc->context->gpus[desc->gpuindex].settings;
+	if (!_select_best_gpu(r)){
+		return false;
 	}
 	uint32_t layercount = 0;
 	uint32_t extcount = 0;
@@ -2030,19 +2020,7 @@ void vk_init_renderer(const char* app_name, const rendererdesc_t* desc, renderer
 	r->enablegpubasedvalidation = desc->enablegpubasedvalidation;
 	r->name = (char*)tc_calloc(strlen(app_name) + 1, sizeof(char));
 	strcpy(r->name, app_name);
-	TC_ASSERT(desc->gpumode != GPU_MODE_UNLINKED || desc->context); // context required in unlinked mode
-	if (desc->context) {
-		TC_ASSERT(desc->gpuindex < desc->context->gpucount);
-		r->vk.instance = desc->context->vk.instance;
-		r->vk.owninstance = false;
-#ifdef ENABLE_DEBUG_UTILS_EXTENSION
-		r->vk.debugutilsmessenger = desc->context->vk.debugutilsmessenger;
-#else
-		r->vk.pVkDebugReport = desc->context->vk.debugreport;
-#endif
-		r->unlinkedrendererindex = r_count;
-	}
-	else if (!init_common(app_name, desc, r)) {
+	if (!init_common(app_name, desc, r)) {
 		tc_free(r->name);
 		return;
 	}

@@ -2,7 +2,7 @@
 /*						RESOURCE LOADING					*/
 /*==========================================================*/
 #pragma once
-#include "core.h"
+#include "graphics.h"
 
 typedef struct {
 	const char* filename;

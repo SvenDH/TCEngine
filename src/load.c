@@ -8,12 +8,15 @@
 #include "tinyimageformat_bits.h"
 #include "tinyimageformat_apis.h"
 
+#include <uv.h>
+
+extern renderertype_t selected_api;
 
 static const char* get_renderer_API_name()
 {
 	switch (selected_api) {
 #if defined(VULKAN)
-	case RENDERER_API_VULKAN: return "VULKAN";
+	case RENDERER_VULKAN: return "VULKAN";
 #endif
 	default: 
 	TC_ASSERT(false && "Renderer API name not defined");
@@ -21,111 +24,51 @@ static const char* get_renderer_API_name()
 	}
 }
 
-
 #if defined(VULKAN)
-#if defined(__ANDROID__)
-// Android: Use shaderc to compile glsl to spirV
-void vk_compileShader(
-	renderer_t* r, shaderstage_t stage, uint32_t codesize, const char* code, const char* outfile, uint32_t macrocount,
-	shadermacro_t* macros, binaryshaderstagedesc_t* out, ShaderByteCodeBuffer* pShaderByteCodeBuffer, const char* entrypoint) {
-	VkPhysicalDeviceProperties properties = {};
-	vkGetPhysicalDeviceProperties(r->mVulkan.pVkActiveGPU, &properties);
-	uint32_t version = properties.apiVersion < TARGET_VULKAN_API_VERSION ? properties.apiVersion : TARGET_VULKAN_API_VERSION;
-	switch (version) {
-	case VK_API_VERSION_1_0:
-		version = shaderc_env_version_vulkan_1_0;
-		break;
-	case VK_API_VERSION_1_1:
-		version = shaderc_env_version_vulkan_1_1;
-		break;
-	default:
-		TRACE(LOG_ERROR, "Unknown Vulkan version %u", version);
-		TC_ASSERT(false);
-		version = shaderc_env_version_vulkan_1_0;
-		break;
-	}
-
-	// compile into spir-V shader
-	shaderc_compiler_t compiler = shaderc_compiler_initialize();
-	shaderc_compile_options_t options = shaderc_compile_options_initialize();
-	for (uint32_t i = 0; i < macrocount; i++) {
-		shaderc_compile_options_add_macro_definition(
-			options, macros[i].definition, strlen(macros[i].definition), macros[i].value, strlen(macros[i].value));
-	}
-
-	const char* android_definition = "TARGET_ANDROID";
-	shaderc_compile_options_add_macro_definition(options, android_definition, strlen(android_definition), "1", 1);
-	shaderc_compile_options_set_target_env(options, shaderc_target_env_vulkan, version);
-
-	shaderc_compilation_result_t spvShader = shaderc_compile_into_spv(compiler, code, codesize, getShadercShaderType(stage), "shaderc_error", entrypoint ? entrypoint : "main", options);
-	shaderc_compilation_status spvStatus = shaderc_result_get_compilation_status(spvShader);
-	if (spvStatus != shaderc_compilation_status_success)
-	{
-		const char* errorMessage = shaderc_result_get_error_message(spvShader);
-		LOGF(LogLevel::eERROR, "Shader compiling failed! with status %s", errorMessage);
-		abort();
-	}
-
-	// Resize the byteCode block based on the compiled shader size
-	out->mByteCodeSize = shaderc_result_get_length(spvShader);
-	out->pByteCode = allocShaderByteCode(pShaderByteCodeBuffer, 1, out->mByteCodeSize, "");
-	memcpy(out->pByteCode, shaderc_result_get_bytes(spvShader), out->mByteCodeSize);
-
-	// Release resources
-	shaderc_result_release(spvShader);
-	shaderc_compiler_release(compiler);
-}
-#else
-// PC: Vulkan has no builtin functions to compile source to spirv
-// So we call the glslangValidator tool located inside VulkanSDK on user machine to compile the glsl code to spirv
-void vk_compileShader(
+void vk_compile_shader(
 	renderer_t* r, shadertarget_t target, shaderstage_t stage, const char* filename, const char* outfile, uint32_t macrocount,
-	shadermacro_t* macros, binaryshaderstagedesc_t out, ShaderByteCodeBuffer* pShaderByteCodeBuffer, const char* entrypoint)
+	shadermacro_t* macros, binaryshaderstagedesc_t out, const char* entrypoint)
 {
-	bstring line = bempty();
-	balloc(&line, 512);
+	bstring line = &(struct tagbstring){1,0,""};
+	balloc(line, 512);
 	char filePath[FS_MAX_PATH] = { 0 };
-	fsAppendPathComponent(fsGetResourceDirectory(RD_SHADER_SOURCES), filename, filePath);
+	fs_path_join(fs_resource_dir(RD_SHADER_SOURCES), filename, filePath);
 	char outfilePath[FS_MAX_PATH] = { 0 };
-	fsAppendPathComponent(fsGetResourceDirectory(RD_SHADER_BINARIES), outfile, outfilePath);
-
-	bformata(&line, "-V \"%s\" -o \"%s\"", filePath, outfilePath);
-	if (target >= shader_target_6_0) bcatliteral(&line, " --target-env vulkan1.1 ");
-	if (target >= shader_target_6_3) bcatliteral(&line, " --target-env spirv1.4");
-	if (entrypoint != NULL) bformata(&line, " -e %s", entrypoint);
-
-		// Add platform macro
-#ifdef _WINDOWS
-	bcatliteral(&line, " \"-D WINDOWS\"");
+	fs_path_join(fs_resource_dir(RD_SHADER_BINARIES), outfile, outfilePath);
+	bformata(line, "-V \"%s\" -o \"%s\"", filePath, outfilePath);
+	if (target >= shader_target_6_0) bcatStatic(line, " --target-env vulkan1.1 ");
+	if (target >= shader_target_6_3) bcatStatic(line, " --target-env spirv1.4");
+	if (entrypoint != NULL) bformata(line, " -e %s", entrypoint);
+	
+#ifdef _WINDOWS									// Add platform macro
+	bcatStatic(line, " \"-D WINDOWS\"");
 #elif defined(__ANDROID__)
-	bcatliteral(&line, " \"-D ANDROID\"");
+	bcatStatic(line, " \"-D ANDROID\"");
 #elif defined(__linux__)
-	bcatliteral(&line, " \"-D LINUX\"");
+	bcatStatic(line, " \"-D LINUX\"");
 #endif
-	// Add user defined macros to the command line
-	for (uint32_t i = 0; i < macrocount; i++)
-		bformata(&line, " \"-D%s=%s\"", macros[i].definition, macros[i].value);
+	for (uint32_t i = 0; i < macrocount; i++)	// Add user defined macros to the command line
+		bformata(line, " \"-D%s=%s\"", macros[i].definition, macros[i].value);
 
-	const char* vulkanSdkStr = getenv("VULKAN_SDK");
-	char* glslangValidator = NULL;
-	if (vulkanSdkStr) {
-		glslangValidator = (char*)tf_calloc(strlen(vulkanSdkStr) + 64, sizeof(char));
-		strcpy(glslangValidator, vulkanSdkStr);
-		strcat(glslangValidator, "/bin/glslangValidator");
+	const char* vksdkstr = getenv("VULKAN_SDK");
+	char* glslang_path = NULL;
+	if (vksdkstr) {
+		glslang_path = (char*)tc_calloc(strlen(vksdkstr) + 64, sizeof(char));
+		strcpy(glslang_path, vksdkstr);
+		strcat(glslang_path, "/bin/glslang_path");
 	}
 	else {
-		glslangValidator = (char*)tf_calloc(64, sizeof(char));
-		strcpy(glslangValidator, "/usr/bin/glslangValidator");
+		glslang_path = (char*)tc_calloc(64, sizeof(char));
+		strcpy(glslang_path, "/usr/bin/glslang_path");
 	}
+	const char* args[1] = { (const char*)line->data };
+	char log[FS_MAX_PATH] = { 0 };
+	fs_path_filename(outfile, log);
+	strcat(log, "_compile.log");
+	char logpath[FS_MAX_PATH] = { 0 };
+	fs_path_join(fs_resource_dir(RD_SHADER_BINARIES), log, logpath);
 
-	const char* args[1] = { (const char*)line.data };
-	char logFileName[FS_MAX_PATH] = { 0 };
-	fsGetPathFileName(outfile, logFileName);
-	strcat(logFileName, "_compile.log");
-	char logFilePath[FS_MAX_PATH] = { 0 };
-	fsAppendPathComponent(fsGetResourceDirectory(RD_SHADER_BINARIES), logFileName, logFilePath);
-
-	if (systemRun(glslangValidator, args, 1, logFilePath) == 0) {
+	if (systemRun(glslang_path, args, 1, logpath) == 0) {
 		FileStream fh = {};
 		bool success = fsOpenStreamFromPath(RD_SHADER_BINARIES, outfile, FM_READ_BINARY, NULL, &fh);
 		//Check if the File Handle exists
@@ -138,7 +81,7 @@ void vk_compileShader(
 	else {
 		FileStream fh = {};
 		// If for some reason the error file could not be created just log error msg
-		if (!fsOpenStreamFromPath(RD_SHADER_BINARIES, logFileName, FM_READ_BINARY, NULL, &fh)) {
+		if (!fsOpenStreamFromPath(RD_SHADER_BINARIES, log, FM_READ_BINARY, NULL, &fh)) {
 			TRACE(LOG_ERROR, "Failed to compile shader %s", filePath);
 		}
 		else {
@@ -152,39 +95,31 @@ void vk_compileShader(
 			fsCloseStream(&fh);
 		}
 	}
-	bdestroy(&line);
-	tc_free(glslangValidator);
+	bdestroy(line);
+	tc_free(glslang_path);
 }
 #endif
 
-bool load_shader_stage_byte_code(
-	renderer_t* r, shadertarget_t target, shaderstage_t stage, shaderstage_t allStages, const shaderstageloaddesc_t* desc,
-	uint32_t macrocount, shadermacro_t* macros, binaryshaderstagedesc_t* out, shaderByteCodeBuffer* pShaderByteCodeBuffer, FSLMetadata* outMetadata)
+bool load_shader_stage_byte_code(renderer_t* r, shadertarget_t target, shaderstage_t stage, shaderstage_t allStages, const shaderstageloaddesc_t* desc, uint32_t macrocount, shadermacro_t* macros, binaryshaderstagedesc_t* out)
 {
 	const char* rendererApi = get_renderer_API_name();
-
 	bstring* cleanupBstrings[4] = {NULL};
 	int cleanupBstringsCount = 0;
-	auto cleanup = [&cleanupBstrings, &cleanupBstringsCount]() {
-		for (int i = 0; i < cleanupBstringsCount; ++i)
-			bdestroy(cleanupBstrings[i]);
-	};
-
 	bstring code = bempty();
 	cleanupBstrings[cleanupBstringsCount++] = &code;
 
-	unsigned char fileNameAPIBuf[FS_MAX_PATH];
-	bstring fileNameAPI = bemptyfromarr(fileNameAPIBuf);
-	cleanupBstrings[cleanupBstringsCount++] = &fileNameAPI;
+	unsigned char filenameAPIBuf[FS_MAX_PATH];
+	bstring filenameAPI = bemptyfromarr(filenameAPIBuf);
+	cleanupBstrings[cleanupBstringsCount++] = &filenameAPI;
 
 	if (rendererApi[0] != '\0')
-		bformat(&fileNameAPI, "%s/%s", rendererApi, desc->pFileName);
+		bformat(&filenameAPI, "%s/%s", rendererApi, desc->filename);
 	else
-		bcatcstr(&fileNameAPI, desc->pFileName);
+		bcatcstr(&filenameAPI, desc->filename);
 
 	// If there are no macros specified there's no change to the shader source, we can use the binary compiled by FSL offline.
 	if (macrocount == 0) {
-		loadByteCode(r, RD_SHADER_BINARIES, (const char*)fileNameAPI.data, out, pShaderByteCodeBuffer, outMetadata);
+		loadByteCode(r, RD_SHADER_BINARIES, (const char*)filenameAPI.data, out, pShaderByteCodeBuffer, outMetadata);
 		cleanup();
 		return true;
 	}
@@ -192,10 +127,10 @@ bool load_shader_stage_byte_code(
 
 	time_t timeStamp = 0;
 	FileStream sourceFileStream = {};
-	bool sourceExists = fsOpenStreamFromPath(RD_SHADER_SOURCES, (const char*)fileNameAPI.data, FM_READ_BINARY, NULL, &sourceFileStream);
+	bool sourceExists = fsOpenStreamFromPath(RD_SHADER_SOURCES, (const char*)filenameAPI.data, FM_READ_BINARY, NULL, &sourceFileStream);
 	ASSERT(sourceExists && "No source shader present for file");
 
-	if (!loadShaderSourceFile(r->pName, &sourceFileStream, (const char*)fileNameAPI.data, &timeStamp, &code)) {
+	if (!loadShaderSourceFile(r->pName, &sourceFileStream, (const char*)filenameAPI.data, &timeStamp, &code)) {
 		fsCloseStream(&sourceFileStream);
 		cleanup();
 		return false;
@@ -213,9 +148,9 @@ bool load_shader_stage_byte_code(
 	}
 
 	char extension[FS_MAX_PATH] = { 0 };
-	fsGetPathExtension(desc->pFileName, extension);
-	char fileName[FS_MAX_PATH] = { 0 };
-	fsGetPathFileName(desc->pFileName, fileName);
+	fsGetPathExtension(desc->filename, extension);
+	char filename[FS_MAX_PATH] = { 0 };
+	fsGetPathFileName(desc->filename, filename);
 
 	bstring binaryShaderComponent = bempty();
 	cleanupBstrings[cleanupBstringsCount++] = &binaryShaderComponent;
@@ -224,7 +159,7 @@ bool load_shader_stage_byte_code(
 
 	static const size_t seed = 0x31415926;
 	size_t shaderDefinesHash = stbds_hash_bstring(&shaderDefines, seed);
-	bformat(&binaryShaderComponent, "%s_%s_%zu_%s_%u", rendererApi, fileName, shaderDefinesHash, extension, target);
+	bformat(&binaryShaderComponent, "%s_%s_%zu_%s_%u", rendererApi, filename, shaderDefinesHash, extension, target);
 
 	bcatliteral(&binaryShaderComponent, ".bin");
 
@@ -234,14 +169,14 @@ bool load_shader_stage_byte_code(
 #if defined(VULKAN)
 			case RENDERER_API_VULKAN:
 #if defined(__ANDROID__)
-				vk_compileShader(
+				vk_compile_shader(
 					r, stage, (uint32_t)code.slen, (const char*)code.data, (const char*)binaryShaderComponent.data, macrocount, macros, out,
 					pShaderByteCodeBuffer, desc->entrypointName);
 				if (!save_byte_code((const char*)binaryShaderComponent.data, (char*)(out->bytecode), out->bytecodesize))
-					LOGF(LogLevel::eWARNING, "Failed to save byte code for file %s", desc->filename);
+					TRACE(LOG_WARNING, "Failed to save byte code for file %s", desc->filename);
 #else
-				vk_compileShader(
-					r, target, stage, (const char*)fileNameAPI.data, (const char*)binaryShaderComponent.data, macrocount, macros, out,
+				vk_compile_shader(
+					r, target, stage, (const char*)filenameAPI.data, (const char*)binaryShaderComponent.data, macrocount, macros, out,
 					pShaderByteCodeBuffer, desc->entrypointName);
 #endif
 				break;
@@ -249,16 +184,52 @@ bool load_shader_stage_byte_code(
 			default: break;
 		}
 		if (!out->pByteCode) {
-			TRACE(LOG_ERROR, "Error while generating bytecode for shader %s", desc->pFileName);
+			TRACE(LOG_ERROR, "Error while generating bytecode for shader %s", desc->filename);
 			fsCloseStream(&sourceFileStream);
 			TC_ASSERT(false);
-			cleanup();
+			for (int i = 0; i < cleanupBstringsCount; i++) bdestroy(cleanupBstrings[i]);
 			return false;
 		}
 	}
 
 	fsCloseStream(&sourceFileStream);
-	cleanup();
+	for (int i = 0; i < cleanupBstringsCount; i++) bdestroy(cleanupBstrings[i]);
+	return true;
+}
+
+bool find_shader_stage(const char* extension, binaryshaderdesc_t* desc, binaryshaderstagedesc_t** out, shaderstage_t* stage)
+{
+	if (_stricmp(extension, "vert") == 0) {
+		*out = &desc->vert;
+		*stage = SHADER_STAGE_VERT;
+	}
+	else if (_stricmp(extension, "frag") == 0) {
+		*out = &desc->frag;
+		*stage = SHADER_STAGE_FRAG;
+	}
+	else if (_stricmp(extension, "tesc") == 0) {
+		*out = &desc->hull;
+		*stage = SHADER_STAGE_HULL;
+	}
+	else if (_stricmp(extension, "tese") == 0) {
+		*out = &desc->domain;
+		*stage = SHADER_STAGE_DOMN;
+	}
+	else if (_stricmp(extension, "geom") == 0) {
+		*out = &desc->geom;
+		*stage = SHADER_STAGE_GEOM;
+	}
+	else if (_stricmp(extension, "comp") == 0) {
+		*out = &desc->comp;
+		*stage = SHADER_STAGE_COMP;
+	}
+	else if (
+		(_stricmp(extension, "rgen") == 0) || (_stricmp(extension, "rmiss") == 0) || (_stricmp(extension, "rchit") == 0) ||
+		(_stricmp(extension, "rint") == 0) || (_stricmp(extension, "rahit") == 0) || (_stricmp(extension, "rcall") == 0)) {
+		*out = &desc->comp;
+		*stage = SHADER_STAGE_RAYTRACING;
+	}
+	else return false;
 	return true;
 }
 
@@ -267,62 +238,49 @@ void load_shader(renderer_t* r, const shaderloaddesc_t* desc, shader_t* shader)
 	if ((uint32_t)desc->target > r->shadertarget) {
 		TRACE(LOG_ERROR, 
 			"Requested shader target (%u) is higher than the shader target that the renderer supports (%u). Shader wont be compiled",
-			(uint32_t)desc->target, (uint32_t)r->shadertarget
-		);
+			(uint32_t)desc->target, (uint32_t)r->shadertarget);
 		return;
 	}
 	binaryshaderdesc_t bindesc = { 0 };
-	shaderbytecodebuffer_t shaderByteCodeBuffer = { 0 };
-	char bytecodeStack[ShaderByteCodeBuffer::kStackSize] = { 0 };
-	shaderByteCodeBuffer.pStackMemory = bytecodeStack;
-
 	shaderstage_t stages = SHADER_STAGE_NONE;
 	for (uint32_t i = 0; i < SHADER_STAGE_COUNT; i++) {
-		if (desc->mStages[i].pFileName && desc->mStages[i].pFileName[0] != 0) {
+		if (desc->stages[i].filename && desc->stages[i].filename[0] != 0) {
 			shaderstage_t stage;
 			binaryshaderstagedesc_t* stage = NULL;
 			char ext[FS_MAX_PATH] = { 0 };
-			fsGetPathExtension(desc->stages[i].filename, ext);
-			if (find_shader_stage(ext, &bindesc, &pStage, &stage))
-				stages |= stage;
+			fs_path_extension(desc->stages[i].filename, ext);
+			if (find_shader_stage(ext, &bindesc, &stage, &stage)) stages |= stage;
 		}
 	}
 	for (uint32_t i = 0; i < SHADER_STAGE_COUNT; i++) {
-		if (desc->mStages[i].pFileName && desc->mStages[i].pFileName[0] != 0) {
-			const char* fileName = desc->mStages[i].pFileName;
+		if (desc->stages[i].filename && desc->stages[i].filename[0] != 0) {
+			const char* filename = desc->stages[i].filename;
 			shaderstage_t stage;
-			Binaryshaderstage_tDesc* pStage = NULL;
+			binaryshaderstagedesc_t* stage = NULL;
 			char ext[FS_MAX_PATH] = { 0 };
-			fsGetPathExtension(fileName, ext);
-			if (find_shader_stage(ext, &bindesc, &pStage, &stage)) {
-				combinedFlags |= desc->mStages[i].mFlags;
-				uint32_t macrocount = desc->mStages[i].mMacroCount;
-				
+			fs_path_extension(filename, ext);
+			if (find_shader_stage(ext, &bindesc, &stage, &stage)) {
+				combinedFlags |= desc->stages[i].flags;
+				uint32_t macrocount = desc->stages[i].macrocount;
 				shadermacro_t* macros = NULL;
 				arrsetlen(macros, macrocount);
-				for (uint32_t macro = 0; macro < desc->mStages[i].mMacroCount; ++macro)
-					macros[macro] = desc->mStages[i].macros[macro]; //-V595
+				for (uint32_t j = 0; j < desc->stages[i].macrocount; j++)
+					macros[j] = desc->stages[i].macros[j];
 
-				FSLMetadata metadata = {};
-				if (!load_shader_stage_byte_code(r, desc->target, stage, stages, desc->stages[i], macrocount, macros, pStage, &shaderByteCodeBuffer, &metadata)) {
+				if (!load_shader_stage_byte_code(r, desc->target, stage, stages, desc->stages[i], macrocount, macros, stage)) {
 					arrfree(macros);
-					freeShaderByteCode(&shaderByteCodeBuffer, &bindesc);
 					return;
 				}
 				arrfree(macros);
-
-				bindesc.mStages |= stage;
-				
-				if (desc->mStages[i].entrypointName)
-					pStage->entrypoint = desc->mStages[i].entrypointName;
+				bindesc.stages |= stage;
+				if (desc->stages[i].entrypointname)
+					stage->entrypoint = desc->stages[i].entrypointname;
 				else
-					pStage->entrypoint = "main";
+					stage->entrypoint = "main";
 			}
 		}
 	}
-	bindesc.mConstantCount = desc->mConstantCount;
-	bindesc.pConstants = desc->pConstants;
-
+	bindesc.constantcount = desc->constantcount;
+	bindesc.constants = desc->constants;
 	add_shaderbinary(r, &bindesc, shader);
-	freeShaderByteCode(&shaderByteCodeBuffer, &bindesc);
 }

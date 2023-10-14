@@ -2,6 +2,8 @@
 #include "private/module.h"
 #include "private/memory.h"
 #include "private/os.h"
+#include "private/vfs.h"
+#include "private/load.h"
 #include "private/core.h"
 #include "private/math.h"
 #include "private/fiber.h"
