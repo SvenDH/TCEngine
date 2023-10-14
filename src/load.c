@@ -12,6 +12,9 @@
 
 extern renderertype_t selected_api;
 
+#define FS_MAX_PATH 512
+
+
 static const char* get_renderer_API_name()
 {
 	switch (selected_api) {
@@ -83,7 +86,6 @@ void vk_compile_shader(
 		// If for some reason the error file could not be created just log error msg
 		if (!fsOpenStreamFromPath(RD_SHADER_BINARIES, log, FM_READ_BINARY, NULL, &fh)) {
 			TRACE(LOG_ERROR, "Failed to compile shader %s", filePath);
-		}
 		else {
 			size_t size = fsGetStreamFileSize(&fh);
 			if (size) {
