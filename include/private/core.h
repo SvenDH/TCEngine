@@ -237,7 +237,7 @@ typedef union {
 /*
  * Cross-platform file descriptor
  */
-typedef struct { uint64_t handle; } fd_t;
+typedef int fd_t;
 
 
 /*==========================================================*/

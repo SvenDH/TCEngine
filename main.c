@@ -101,7 +101,7 @@ static void* main_fiber(void* args) {
 	shaderdesc.vert.bytecode = tmp;
 	shaderdesc.vert.bytecodesize = size;
 
-	add_shaderbinary(&renderer, &, &shader);
+	//add_shaderbinary(&renderer, &, &shader);
 
 	TRACE(LOG_INFO, "%x", tmp);
 	

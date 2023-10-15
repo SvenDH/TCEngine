@@ -60,6 +60,9 @@
         "*.ttss": "css",
         "tinyimageformat_bits.h": "c",
         "bstrlib.h": "c",
-        "tinyimageformat_base.h": "c"
+        "tinyimageformat_base.h": "c",
+        "core.h": "c",
+        "ranges": "c",
+        "span": "c"
     }
 }

@@ -98,7 +98,7 @@ typedef struct os_request_s {
 struct context_t {
 	tc_allocator_i* allocator;
 	os_request_t*  pool;
-	lock_t* lock;
+	lock_t lock;
 };
 
 struct context_t* context;
@@ -207,7 +207,7 @@ os_request_t* os_request_init_ex(char* buf, uint64_t size, tc_allocator_i* temp)
 	req->instance = req;
 	req->dtor = os_request_destroy;
 	req->future = tc_fut_new(context->allocator, 1, req, 4);
-	req->buf = uv_buf_init(buf, size);
+	req->buf = uv_buf_init(buf, (unsigned int)size);
 	req->temp = temp;
 	req->req.data = req;
 	return req;
@@ -268,19 +268,19 @@ tc_fut_t* os_open(const char* path, int flags) {
 
 tc_fut_t* os_read(fd_t file, char* buf, uint64_t len, int64_t offset) {
 	os_request_t* req = os_request_init_ex(buf, len, NULL);
-	uv_fs_read(tc_eventloop(), &req->req, file.handle, &req->buf, 1, offset, os_cb);
+	uv_fs_read(tc_eventloop(), &req->req, file, &req->buf, 1, offset, os_cb);
 	return req->future;
 }
 
 tc_fut_t* os_write(fd_t file, char* buf, uint64_t len, int64_t offset) {
 	os_request_t* req = os_request_init_ex(buf, len, NULL);
-	uv_fs_write(tc_eventloop(), &req->req, file.handle, &req->buf, 1, offset, os_cb);
+	uv_fs_write(tc_eventloop(), &req->req, file, &req->buf, 1, offset, os_cb);
 	return req->future;
 }
 
 tc_fut_t* os_close(fd_t file) {
 	os_request_t* req = os_request_init();
-	uv_fs_close(tc_eventloop(), &req->req, file.handle, os_cb);
+	uv_fs_close(tc_eventloop(), &req->req, file, os_cb);
 	return req->future;
 }
 
@@ -402,15 +402,30 @@ void os_destroy_window(tc_window_t window)
 	glfwDestroyWindow(window);
 }
 
-_os_process_exit
+typedef struct {
+	uv_process_t;
+	int64_t exit_status;
+	int term_signal;
+} tc_process_t;
+
+static
+void os_process_exit(uv_process_t* process, int64_t exit_status, int term_signal)
+{
+	tc_process_t* proc = (tc_process_t*)process;
+	tc_fut_t* fut = (tc_fut_t*)process->data;
+	proc->exit_status = exit_status;
+	proc->term_signal = term_signal;
+	tc_fut_decr(fut);
+}
 
 int os_system_run(const char* cmd, const char** args, size_t numargs, const char* stdoutpath)
 {
-	uv_process_t child_req;
+	tc_process_t child_req = { 0 };
 	char** pargs = (char**)alloca((numargs + 2) * sizeof(char*));
 	pargs[0] = cmd;
 	for (int i = 0; i < numargs; i++) pargs[i+1] = args[i];
 	pargs[numargs+1] = NULL;
+
 	uv_stdio_container_t child_stdio[3];
     child_stdio[0].flags = UV_IGNORE;
 	if (stdoutpath) {
@@ -426,16 +441,18 @@ int os_system_run(const char* cmd, const char** args, size_t numargs, const char
     child_stdio[2].flags = UV_INHERIT_FD;
     child_stdio[2].data.fd = 2;
 
-	tc_fut_t* fut = tc_fut_new(context->allocator, 1, req, 1);
-	tc_fut_decr(handle->future);
+	tc_fut_t* fut = tc_fut_new(context->allocator, 1, NULL, 1);
+	child_req.data = fut;
 
 	uv_process_options_t options = {
-		.exit_cb = NULL,
+		.exit_cb = os_process_exit,
 		.file = cmd,
 		.args = pargs,
 		.stdio_count = 3
 	};
 	uv_spawn(tc_eventloop(), &child_req, &options);
+	await(fut);
+	return (int)child_req.exit_status;
 }
 
 tc_os_i* tc_os = &(tc_os_i) {

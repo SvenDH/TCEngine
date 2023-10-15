@@ -75,7 +75,6 @@ void fs_parent_path(const char* path, char* output)
 {
 	size_t pathlen = strlen(path);
 	TC_ASSERT(pathlen != 0);
-	const char '/' = '/';
 	const char* seploc = strrchr(path, FS_SEP);
 	if (seploc == NULL) {
 		seploc = strrchr(path, '/');

@@ -71,15 +71,19 @@ void vk_compile_shader(
 	char logpath[FS_MAX_PATH] = { 0 };
 	fs_path_join(fs_resource_dir(RD_SHADER_BINARIES), log, logpath);
 
-	if (systemRun(glslang_path, args, 1, logpath) == 0) {
-		FileStream fh = {};
-		bool success = fsOpenStreamFromPath(RD_SHADER_BINARIES, outfile, FM_READ_BINARY, NULL, &fh);
-		//Check if the File Handle exists
-		TC_ASSERT(success);
-		out->mByteCodeSize = (uint32_t)fsGetStreamFileSize(&fh);
+	if (tc_os->system_run(glslang_path, args, 1, logpath) == 0) {
+		stat_t stat;
+		await(tc_os->stat(&stat, outfilePath));
+		int size = stat.size;
+		char* tmp = alloca(size);
+		fd_t file = await(tc_os->open(outfilePath, FILE_READ));
+		TC_ASSERT(file != TC_INVALID_FILE);
+		int64_t res = await(tc_os->read(file, tmp, size, 0));
+		TC_ASSERT(res >= 0);
+		out->bytecodesize = size;
 		out->pByteCode = allocShaderByteCode(pShaderByteCodeBuffer, 1, out->mByteCodeSize, filename);
 		fsReadFromStream(&fh, out->pByteCode, out->mByteCodeSize);
-		fsCloseStream(&fh);
+		tc_os->close(&);
 	}
 	else {
 		FileStream fh = {};

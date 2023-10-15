@@ -472,9 +472,8 @@ static bool counter_add_to_waiting(tc_fut_t* c, size_t value)
 	fiber_entry* slots = (fiber_entry*)(c + 1);
 	for (uint32_t i = 0; i < c->num_slots; i++) {
 		size_t expected = 0;
-		if (!atomic_compare_exchange_strong_explicit(&slots[i].fiber, &expected, f, memory_order_seq_cst, memory_order_relaxed)) {
+		if (!atomic_compare_exchange_strong_explicit(&slots[i].fiber, &expected, f, memory_order_seq_cst, memory_order_relaxed))
 			continue;
-		}
 		slots[i].value = value;
 		// Signal slot is ready
 		atomic_store_explicit(&slots[i].inuse, 0, memory_order_seq_cst);
@@ -485,9 +484,8 @@ static bool counter_add_to_waiting(tc_fut_t* c, size_t value)
 		}
 		if (slots[i].value == probed) {
 			expected = 0;
-			if (!atomic_compare_exchange_strong_explicit(&slots[i].inuse, &expected, true, memory_order_seq_cst, memory_order_relaxed)) {
+			if (!atomic_compare_exchange_strong_explicit(&slots[i].inuse, &expected, true, memory_order_seq_cst, memory_order_relaxed))
 				return false;
-			}
 			//Slot is now free, in use slays true
 			atomic_store_explicit(&slots[i].fiber, 0, memory_order_release);
 			return true;
@@ -506,17 +504,15 @@ tc_fut_t* tc_fut_new(tc_allocator_i* a, size_t value, tc_waitable_i* waitable, u
 	c->waitable = waitable;
 	atomic_store(&c->value, value);
 	fiber_entry* slots = (fiber_entry*)(c + 1);
-	for (uint32_t i = 0; i < c->num_slots; i++) {
+	for (uint32_t i = 0; i < c->num_slots; i++)
 		atomic_store(&slots[i].inuse, true);
-	}
 	return c;
 }
 
 void tc_fut_free(tc_fut_t* c)
 {
-	if (c->waitable && c->waitable->dtor && c->waitable->instance) {
+	if (c->waitable && c->waitable->dtor && c->waitable->instance)
 		c->waitable->dtor(c->waitable->instance);
-	}
 	TC_FREE(c->a, c, sizeof(tc_fut_t) + c->num_slots * sizeof(fiber_entry));
 }
 
@@ -537,9 +533,7 @@ size_t tc_fut_decr(tc_fut_t* c)
 int64_t tc_fut_wait(tc_fut_t* c, size_t value)
 {
 	bool done = counter_add_to_waiting(c, value);
-	if (!done) {
-		tc_fiber_yield(NULL);
-	}
+	if (!done) tc_fiber_yield(NULL);
 	return c->waitable->results;
 }
 
