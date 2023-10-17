@@ -87,7 +87,7 @@ static void* main_fiber(void* args) {
 	
 	const char* vert_file = "..\\..\\shaders\\Binary\\base.vert.spv";
 
-	stat_t stat = { 0 };
+	stat_t stat;
 	await(tc_os->stat(&stat, vert_file));
 	int size = stat.size;
 	char* tmp = alloca(size);

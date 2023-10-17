@@ -1,12 +1,13 @@
 #include "private_types.h"
 
-typedef struct vfs_s {
+#define MEMORY_STREAM_GROW_SIZE 4096
+#define STREAM_COPY_BUFFER_SIZE 4096
+#define STREAM_FIND_BUFFER_SIZE 1024
 
-} vfs_t;
 
 typedef struct {
 	vfs_t* fs;      // NULL
-	mount_t mount;  // RM_CONTENT
+	mount_t mount;  // M_CONTENT
 	char path[FS_MAX_PATH];
 	bool bundled;   // false
 } resourcedirinfo_t;
@@ -138,3 +139,110 @@ void tc_set_resource_dir(vfs_t* io, mount_t mount, resourcedir_t resourcedir, co
 	if (!dir->bundled && dir->path[0] != 0 && !fsCreateDirectory(resourcedir))
 		TRACE(LOG_ERROR, "Could not create direcotry '%s' in filesystem", resourcepath);
 }
+
+
+/************************************************************************/
+/* 							Memory Stream								*/
+/************************************************************************/
+static inline size_t mstream_cap(fstream_t* stream, size_t reqsize)
+{
+	return min((ssize_t)reqsize, max((ssize_t)stream->size - (ssize_t)stream->mem.cursor, (ssize_t)0));
+}
+
+static bool mtream_close(fstream_t* stream)
+{
+	mstream_t* mem = &stream->mem;
+	if (mem->owner) tc_free(mem->buffer);
+	return true;
+}
+
+static size_t mstream_read(fstream_t* stream, void* buf, size_t len)
+{
+	if (!(stream->flags & FM_READ)) {
+		TRACE(LOG_WARNING, "Attempting to read from stream that doesn't have FM_READ flag.");
+		return 0;
+	}
+	if ((ssize_t)stream->mem.cursor >= stream->size) return 0;
+	size_t bytes = mstream_cap(stream, len);
+	memcpy(buf, stream->mem.buffer + stream->mem.cursor, bytes);
+	stream->mem.cursor += bytes;
+	return bytes;
+}
+
+static size_t mstream_Write(fstream_t* stream, const void* buf, size_t len)
+{
+	if (!(stream->flags & (FM_WRITE | FM_APPEND))) {
+		TRACE(LOG_WARNING, "Attempting to write to stream that doesn't have FM_WRITE or FM_APPEND flags.");
+		return 0;
+	}
+	if (stream->mem.cursor > (size_t)stream->size)
+		TRACE(LOG_WARNING, "Creating discontinuity in initialized memory in memory stream.");
+	size_t available = 0;
+	if (stream->mMemory.mCapacity >= stream->mem.cursor)
+		available = stream->mMemory.mCapacity - stream->mem.cursor;
+
+	if (len > available) {
+		size_t newCapacity = stream->mem.cursor + len;
+		newCapacity = MEMORY_STREAM_GROW_SIZE *
+			(newCapacity / MEMORY_STREAM_GROW_SIZE +
+			(newCapacity % MEMORY_STREAM_GROW_SIZE == 0 ? 0 : 1));
+		void* newBuffer = tc_realloc(stream->mem.buffer, newCapacity);
+		if (!newBuffer) {
+			LOGF(eERROR, "Failed to reallocate memory stream buffer with new capacity %lu.", (unsigned long)newCapacity);
+			return 0;
+		}
+		stream->mem.buffer = (uint8_t*)newBuffer;
+		stream->mem.capacity = newCapacity;
+	}
+	memcpy(stream->mem.buffer + stream->mem.cursor, buf, len);
+	stream->mem.cursor += len;
+	stream->size = max(stream->size, (ssize_t)stream->mem.cursor);
+	return len;
+}
+
+
+static bool mstream_Seek(fstream_t* stream, seek_t seek, ssize_t offset)
+{
+	switch (baseOffset)
+	{
+	case SBO_START_OF_FILE:
+	{
+		if (seekOffset < 0 || seekOffset > stream->size)
+		{
+			return false;
+		}
+		stream->mem.cursor = seekOffset;
+	}
+	break;
+	case SBO_CURRENT_POSITION:
+	{
+		ssize_t newPosition = (ssize_t)stream->mem.cursor + seekOffset;
+		if (newPosition < 0 || newPosition > stream->size)
+		{
+			return false;
+		}
+		stream->mem.cursor = (size_t)newPosition;
+	}
+	break;
+
+	case SBO_END_OF_FILE:
+	{
+		ssize_t newPosition = (ssize_t)stream->size + seekOffset;
+		if (newPosition < 0 || newPosition > stream->size)
+		{
+			return false;
+		}
+		stream->mem.cursor = (size_t)newPosition;
+	}
+	break;
+	}
+	return true;
+}
+
+static ssize_t mstream_GetSeekPosition(const fstream_t* stream) { return stream->mem.cursor; }
+
+static ssize_t mstream_GetSize(const fstream_t* stream) { return stream->size; }
+
+static bool mstream_Flush(fstream_t*) { return true; }
+
+static bool mstream_IsAtEnd(const fstream_t* stream) { return (ssize_t)stream->mem.cursor == stream->size; }

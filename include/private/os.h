@@ -62,7 +62,7 @@ typedef struct tc_os_i {
     void (*guard_page)(void* ptr, size_t size);
 
     /* Opens a file and returns the file handle on success or alse TC_INVALID_FILE */
-    tc_fut_t* (*open)(const char* path, int flags);
+    tc_fut_t* (*open)(const char* path, file_flags_t flags);
 
     /* Reads a number of bytes at offset into a buffer */
     tc_fut_t* (*read)(fd_t file, char* buf, uint64_t size, int64_t offset);
