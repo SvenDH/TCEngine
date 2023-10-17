@@ -455,6 +455,16 @@ int os_system_run(const char* cmd, const char** args, size_t numargs, const char
 	return (int)child_req.exit_status;
 }
 
+const char* os_get_env(const char* name, tc_allocator_i* temp)
+{
+	char tempbuf[1024];
+	size_t len = 1024;
+	uv_os_getenv(name, tempbuf, &len);
+	const char* ptr = TC_ALLOC(temp, len);
+	memcpy(ptr, tempbuf, len);
+	return ptr;
+}
+
 tc_os_i* tc_os = &(tc_os_i) {
 	.map = mem_map,
 	.unmap = mem_unmap,
@@ -483,5 +493,7 @@ tc_os_i* tc_os = &(tc_os_i) {
 	.current_thread = os_get_current_thread,
 	.set_thread_affinity = os_set_thread_affinity,
 	.create_window = os_create_window,
-	.destroy_window = os_destroy_window
+	.destroy_window = os_destroy_window,
+	.system_run = os_system_run,
+	.get_env = os_get_env
 };

@@ -111,7 +111,7 @@ typedef struct tc_os_i {
 
     int (*system_run)(const char* cmd, const char** args, size_t numargs, const char* stdoutpath);
 
-    const char* (*get_env)(const char* name);
+    const char* (*get_env)(const char* name, tc_allocator_i* temp);
 
 } tc_os_i;
 

@@ -91,17 +91,14 @@ static void* main_fiber(void* args) {
 	await(tc_os->stat(&stat, vert_file));
 	int size = stat.size;
 	char* tmp = alloca(size);
-	int64_t file = await(tc_os->open(vert_file, FILE_READ));
-	await(tc_os->read((fd_t){ .handle=file }, tmp, size, 0));
+	fd_t file = (fd_t)await(tc_os->open(vert_file, FILE_READ));
+	await(tc_os->read(file, tmp, size, 0));
 
 	shader_t shader;
-	binaryshaderdesc_t shaderdesc = {
-		.stages = SHADER_STAGE_VERT,
-	};
-	shaderdesc.vert.bytecode = tmp;
-	shaderdesc.vert.bytecodesize = size;
-
-	//add_shaderbinary(&renderer, &, &shader);
+	shaderloaddesc_t desc = { 0 };
+	desc.stages[0] = { "base.vert", NULL, 0 };
+	desc.stages[1] = { "base.frag", NULL, 0 };
+	load_shader(&renderer, &desc, &shader);
 
 	TRACE(LOG_INFO, "%x", tmp);
 	
@@ -121,6 +118,9 @@ int main(void) {
 
 	tc_init_registry();
 	tc_fiber_pool_init(a, 256);
+
+	tc_set_resource_dir(pSystemFileIO, RM_CONTENT, RD_SHADER_SOURCES,  "Shaders");
+
 	tc_renderer_init("TCEngine", &(rendererdesc_t){
 		0
 	}, &renderer);

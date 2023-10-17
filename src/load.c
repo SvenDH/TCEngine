@@ -12,37 +12,37 @@
 
 extern renderertype_t selected_api;
 
-#define FS_MAX_PATH 512
-
-
-static const char* get_renderer_API_name()
+void load_byte_code(resourcedir_t dir, const char* filename, binaryshaderstagedesc_t* out)
 {
-	switch (selected_api) {
-#if defined(VULKAN)
-	case RENDERER_VULKAN: return "VULKAN";
-#endif
-	default: 
-	TC_ASSERT(false && "Renderer API name not defined");
-	return "";
-	}
+	char path[FS_MAX_PATH] = { 0 };
+	fs_path_join(tc_get_resource_dir(dir), filename, path);
+	fd_t fd = (fd_t)await(tc_os->open(path, FILE_READ));
+	TC_ASSERT(fd != TC_INVALID_FILE);
+	stat_t stat;
+	await(tc_os->stat(&stat, path));
+	out->bytecodesize = (uint32_t)stat.size;
+	out->bytecode = tc_malloc(stat.size * sizeof(uint8_t));
+	int64_t res = await(tc_os->read(fd, out->bytecode, stat.size, 0));
+	TC_ASSERT(res >= 0);
+	tc_os->close(fd);
 }
 
 #if defined(VULKAN)
 void vk_compile_shader(
 	renderer_t* r, shadertarget_t target, shaderstage_t stage, const char* filename, const char* outfile, uint32_t macrocount,
-	shadermacro_t* macros, binaryshaderstagedesc_t out, const char* entrypoint)
+	shadermacro_t* macros, binaryshaderstagedesc_t* out, const char* entrypoint)
 {
-	bstring line = &(struct tagbstring){1,0,""};
+	TC_TEMP_INIT(temp);
+	bstring line = &(struct tagbstring)bsStatic("");
 	balloc(line, 512);
 	char filePath[FS_MAX_PATH] = { 0 };
-	fs_path_join(fs_resource_dir(RD_SHADER_SOURCES), filename, filePath);
-	char outfilePath[FS_MAX_PATH] = { 0 };
-	fs_path_join(fs_resource_dir(RD_SHADER_BINARIES), outfile, outfilePath);
-	bformata(line, "-V \"%s\" -o \"%s\"", filePath, outfilePath);
+	fs_path_join(tc_get_resource_dir(RD_SHADER_SOURCES), filename, filePath);
+	char outpath[FS_MAX_PATH] = { 0 };
+	fs_path_join(tc_get_resource_dir(RD_SHADER_BINARIES), outfile, outpath);
+	bformata(line, "-V \"%s\" -o \"%s\"", filePath, outpath);
 	if (target >= shader_target_6_0) bcatStatic(line, " --target-env vulkan1.1 ");
 	if (target >= shader_target_6_3) bcatStatic(line, " --target-env spirv1.4");
 	if (entrypoint != NULL) bformata(line, " -e %s", entrypoint);
-	
 #ifdef _WINDOWS									// Add platform macro
 	bcatStatic(line, " \"-D WINDOWS\"");
 #elif defined(__ANDROID__)
@@ -53,7 +53,7 @@ void vk_compile_shader(
 	for (uint32_t i = 0; i < macrocount; i++)	// Add user defined macros to the command line
 		bformata(line, " \"-D%s=%s\"", macros[i].definition, macros[i].value);
 
-	const char* vksdkstr = getenv("VULKAN_SDK");
+	const char* vksdkstr = tc_os->get_env("VULKAN_SDK", &temp);
 	char* glslang_path = NULL;
 	if (vksdkstr) {
 		glslang_path = (char*)tc_calloc(strlen(vksdkstr) + 64, sizeof(char));
@@ -69,169 +69,150 @@ void vk_compile_shader(
 	fs_path_filename(outfile, log);
 	strcat(log, "_compile.log");
 	char logpath[FS_MAX_PATH] = { 0 };
-	fs_path_join(fs_resource_dir(RD_SHADER_BINARIES), log, logpath);
-
+	fs_path_join(tc_get_resource_dir(RD_SHADER_BINARIES), log, logpath);
 	if (tc_os->system_run(glslang_path, args, 1, logpath) == 0) {
 		stat_t stat;
-		await(tc_os->stat(&stat, outfilePath));
-		int size = stat.size;
-		char* tmp = alloca(size);
-		fd_t file = await(tc_os->open(outfilePath, FILE_READ));
-		TC_ASSERT(file != TC_INVALID_FILE);
-		int64_t res = await(tc_os->read(file, tmp, size, 0));
+		await(tc_os->stat(&stat, outpath));
+		out->bytecodesize = (uint32_t)stat.size;
+		fd_t f = (fd_t)await(tc_os->open(outpath, FILE_READ));
+		TC_ASSERT(f != TC_INVALID_FILE);
+		out->bytecode = tc_malloc(stat.size * sizeof(uint8_t));
+		int64_t res = await(tc_os->read(f, out->bytecode, stat.size, 0));
 		TC_ASSERT(res >= 0);
-		out->bytecodesize = size;
-		out->pByteCode = allocShaderByteCode(pShaderByteCodeBuffer, 1, out->mByteCodeSize, filename);
-		fsReadFromStream(&fh, out->pByteCode, out->mByteCodeSize);
-		tc_os->close(&);
+		tc_os->close(f);
 	}
 	else {
-		FileStream fh = {};
-		// If for some reason the error file could not be created just log error msg
-		if (!fsOpenStreamFromPath(RD_SHADER_BINARIES, log, FM_READ_BINARY, NULL, &fh)) {
-			TRACE(LOG_ERROR, "Failed to compile shader %s", filePath);
-		else {
-			size_t size = fsGetStreamFileSize(&fh);
-			if (size) {
-				char* errorLog = (char*)tc_malloc(size + 1);
-				errorLog[size] = 0;
-				fsReadFromStream(&fh, errorLog, size);
-				TRACE(LOG_ERROR, "Failed to compile shader %s with error\n%s", filePath, errorLog);
-			}
-			fsCloseStream(&fh);
-		}
+		//Todo: log error from logpath
 	}
 	bdestroy(line);
 	tc_free(glslang_path);
+	TC_TEMP_CLOSE(temp);
 }
 #endif
 
 bool load_shader_stage_byte_code(renderer_t* r, shadertarget_t target, shaderstage_t stage, shaderstage_t allStages, const shaderstageloaddesc_t* desc, uint32_t macrocount, shadermacro_t* macros, binaryshaderstagedesc_t* out)
 {
-	const char* rendererApi = get_renderer_API_name();
-	bstring* cleanupBstrings[4] = {NULL};
-	int cleanupBstringsCount = 0;
-	bstring code = bempty();
-	cleanupBstrings[cleanupBstringsCount++] = &code;
+	const char* api = "";
+	switch (selected_api) {
+#if defined(VULKAN)
+	case RENDERER_VULKAN:
+		api = "VULKAN";
+		break;
+#endif
+	default: 
+		TC_ASSERT(false && "Renderer API name not defined");
+		break;
+	}
+	int n = 0;
+	bstring strings[4] = { 0 };
+	bstring code = &(struct tagbstring)bsStatic("");
 
-	unsigned char filenameAPIBuf[FS_MAX_PATH];
-	bstring filenameAPI = bemptyfromarr(filenameAPIBuf);
-	cleanupBstrings[cleanupBstringsCount++] = &filenameAPI;
+	unsigned char fnamebuf[FS_MAX_PATH] = { 0 };
+	bstring filenamestr = &(struct tagbstring){FS_MAX_PATH, 0, fnamebuf};
 
-	if (rendererApi[0] != '\0')
-		bformat(&filenameAPI, "%s/%s", rendererApi, desc->filename);
-	else
-		bcatcstr(&filenameAPI, desc->filename);
+	strings[n++] = code;
+	strings[n++] = filenamestr;
+
+	if (api[0] != '\0') filenamestr = bformat("%s/%s", api, desc->filename);
+	else bcatcstr(filenamestr, desc->filename);
+	
+#define CLEANUP for (int i = 0; i < n; i++) bdestroy(strings[i]);
 
 	// If there are no macros specified there's no change to the shader source, we can use the binary compiled by FSL offline.
 	if (macrocount == 0) {
-		loadByteCode(r, RD_SHADER_BINARIES, (const char*)filenameAPI.data, out, pShaderByteCodeBuffer, outMetadata);
-		cleanup();
+		load_byte_code(RD_SHADER_BINARIES, (const char*)filenamestr->data, out);
+		CLEANUP
 		return true;
 	}
-	TRACE(LOG_INFO, "Compiling shader in runtime: %s -> '%s' macrocount=%u", rendererApi, desc->filename, macrocount);
+	TRACE(LOG_INFO, "Compiling shader in runtime: %s -> '%s' macrocount=%u", api, desc->filename, macrocount);
 
-	time_t timeStamp = 0;
-	FileStream sourceFileStream = {};
-	bool sourceExists = fsOpenStreamFromPath(RD_SHADER_SOURCES, (const char*)filenameAPI.data, FM_READ_BINARY, NULL, &sourceFileStream);
-	ASSERT(sourceExists && "No source shader present for file");
+	char path[FS_MAX_PATH] = { 0 };
+	fs_path_join(tc_get_resource_dir(RD_SHADER_SOURCES), (const char*)filenamestr->data, path);
+	fd_t f = (fd_t)await(tc_os->open(path, FILE_READ));
+	TC_ASSERT(f != TC_INVALID_FILE && "No source shader present for file");
 
-	if (!loadShaderSourceFile(r->pName, &sourceFileStream, (const char*)filenameAPI.data, &timeStamp, &code)) {
-		fsCloseStream(&sourceFileStream);
-		cleanup();
-		return false;
+	stat_t stat;
+	await(tc_os->stat(&stat, path));
+	uint64_t timestamp = stat.last_altered;
+	char* mem = (char*)alloca(stat.size + 1);
+	int64_t res = await(tc_os->read(f, mem, stat.size, 0));
+	TC_ASSERT(res >= 0);
+	mem[stat.size] = '\0';
+	bcatblk(code, mem, (int)stat.size);
+	
+	bstring defines = &(struct tagbstring)bsStatic("");
+	balloc(defines, 64);
+	for (uint32_t i = 0; i < macrocount; i++) {		// Apply user specified macros
+		bcatcstr(defines, macros[i].definition);
+		bcatcstr(defines, macros[i].value);
 	}
-
-	bstring shaderDefines = bempty();
-	cleanupBstrings[cleanupBstringsCount++] = &shaderDefines;
-
-	balloc(&shaderDefines, 64);
-
-	// Apply user specified macros
-	for (uint32_t i = 0; i < macrocount; i++) {
-		bcatcstr(&shaderDefines, macros[i].definition);
-		bcatcstr(&shaderDefines, macros[i].value);
-	}
-
-	char extension[FS_MAX_PATH] = { 0 };
-	fsGetPathExtension(desc->filename, extension);
+	char ext[FS_MAX_PATH] = { 0 };
+	fs_path_ext(desc->filename, ext);
 	char filename[FS_MAX_PATH] = { 0 };
-	fsGetPathFileName(desc->filename, filename);
-
-	bstring binaryShaderComponent = bempty();
-	cleanupBstrings[cleanupBstringsCount++] = &binaryShaderComponent;
-
-	balloc(&binaryShaderComponent, 128);
+	fs_path_filename(desc->filename, filename);
 
 	static const size_t seed = 0x31415926;
-	size_t shaderDefinesHash = stbds_hash_bstring(&shaderDefines, seed);
-	bformat(&binaryShaderComponent, "%s_%s_%zu_%s_%u", rendererApi, filename, shaderDefinesHash, extension, target);
+	size_t hash = stbds_hash_string(defines->data, seed);
+	bstring bin = bformat("%s_%s_%zu_%s_%u", api, filename, hash, ext, target);
+	bcatStatic(bin, ".bin");
+	balloc(bin, 128);
 
-	bcatliteral(&binaryShaderComponent, ".bin");
-
-	// Shader source is newer than binary
-	if (!check_for_byte_code(r, (const char*)binaryShaderComponent.data, timeStamp, out, pShaderByteCodeBuffer)) {
+	strings[n++] = defines;
+	strings[n++] = bin;
+	
+	if (timestamp > stat.last_altered) {			// Shader source is newer than binary
+		load_byte_code(RD_SHADER_BINARIES, (const char*)bin->data, out);
 		switch (selected_api) {
 #if defined(VULKAN)
-			case RENDERER_API_VULKAN:
-#if defined(__ANDROID__)
-				vk_compile_shader(
-					r, stage, (uint32_t)code.slen, (const char*)code.data, (const char*)binaryShaderComponent.data, macrocount, macros, out,
-					pShaderByteCodeBuffer, desc->entrypointName);
-				if (!save_byte_code((const char*)binaryShaderComponent.data, (char*)(out->bytecode), out->bytecodesize))
-					TRACE(LOG_WARNING, "Failed to save byte code for file %s", desc->filename);
-#else
-				vk_compile_shader(
-					r, target, stage, (const char*)filenameAPI.data, (const char*)binaryShaderComponent.data, macrocount, macros, out,
-					pShaderByteCodeBuffer, desc->entrypointName);
-#endif
+			case RENDERER_VULKAN:
+				vk_compile_shader(r, target, stage, (const char*)filenamestr->data, (const char*)bin->data, macrocount, macros, out, desc->entrypointname);
 				break;
 #endif
 			default: break;
 		}
-		if (!out->pByteCode) {
+		if (!out->bytecode) {
 			TRACE(LOG_ERROR, "Error while generating bytecode for shader %s", desc->filename);
-			fsCloseStream(&sourceFileStream);
+			tc_os->close(f);
 			TC_ASSERT(false);
-			for (int i = 0; i < cleanupBstringsCount; i++) bdestroy(cleanupBstrings[i]);
+			CLEANUP
 			return false;
 		}
 	}
-
-	fsCloseStream(&sourceFileStream);
-	for (int i = 0; i < cleanupBstringsCount; i++) bdestroy(cleanupBstrings[i]);
+	tc_os->close(f);
+	CLEANUP
 	return true;
+#undef CLEANUP
 }
 
-bool find_shader_stage(const char* extension, binaryshaderdesc_t* desc, binaryshaderstagedesc_t** out, shaderstage_t* stage)
+bool find_shader_stage(const char* ext, binaryshaderdesc_t* desc, binaryshaderstagedesc_t** out, shaderstage_t* stage)
 {
-	if (_stricmp(extension, "vert") == 0) {
+	if (_stricmp(ext, "vert") == 0) {
 		*out = &desc->vert;
 		*stage = SHADER_STAGE_VERT;
 	}
-	else if (_stricmp(extension, "frag") == 0) {
+	else if (_stricmp(ext, "frag") == 0) {
 		*out = &desc->frag;
 		*stage = SHADER_STAGE_FRAG;
 	}
-	else if (_stricmp(extension, "tesc") == 0) {
+	else if (_stricmp(ext, "tesc") == 0) {
 		*out = &desc->hull;
 		*stage = SHADER_STAGE_HULL;
 	}
-	else if (_stricmp(extension, "tese") == 0) {
+	else if (_stricmp(ext, "tese") == 0) {
 		*out = &desc->domain;
 		*stage = SHADER_STAGE_DOMN;
 	}
-	else if (_stricmp(extension, "geom") == 0) {
+	else if (_stricmp(ext, "geom") == 0) {
 		*out = &desc->geom;
 		*stage = SHADER_STAGE_GEOM;
 	}
-	else if (_stricmp(extension, "comp") == 0) {
+	else if (_stricmp(ext, "comp") == 0) {
 		*out = &desc->comp;
 		*stage = SHADER_STAGE_COMP;
 	}
 	else if (
-		(_stricmp(extension, "rgen") == 0) || (_stricmp(extension, "rmiss") == 0) || (_stricmp(extension, "rchit") == 0) ||
-		(_stricmp(extension, "rint") == 0) || (_stricmp(extension, "rahit") == 0) || (_stricmp(extension, "rcall") == 0)) {
+		(_stricmp(ext, "rgen") == 0) || (_stricmp(ext, "rmiss") == 0) || (_stricmp(ext, "rchit") == 0) ||
+		(_stricmp(ext, "rint") == 0) || (_stricmp(ext, "rahit") == 0) || (_stricmp(ext, "rcall") == 0)) {
 		*out = &desc->comp;
 		*stage = SHADER_STAGE_RAYTRACING;
 	}
@@ -252,37 +233,36 @@ void load_shader(renderer_t* r, const shaderloaddesc_t* desc, shader_t* shader)
 	for (uint32_t i = 0; i < SHADER_STAGE_COUNT; i++) {
 		if (desc->stages[i].filename && desc->stages[i].filename[0] != 0) {
 			shaderstage_t stage;
-			binaryshaderstagedesc_t* stage = NULL;
+			binaryshaderstagedesc_t* stagedesc = NULL;
 			char ext[FS_MAX_PATH] = { 0 };
-			fs_path_extension(desc->stages[i].filename, ext);
-			if (find_shader_stage(ext, &bindesc, &stage, &stage)) stages |= stage;
+			fs_path_ext(desc->stages[i].filename, ext);
+			if (find_shader_stage(ext, &bindesc, &stagedesc, &stage)) stages |= stage;
 		}
 	}
 	for (uint32_t i = 0; i < SHADER_STAGE_COUNT; i++) {
 		if (desc->stages[i].filename && desc->stages[i].filename[0] != 0) {
 			const char* filename = desc->stages[i].filename;
 			shaderstage_t stage;
-			binaryshaderstagedesc_t* stage = NULL;
+			binaryshaderstagedesc_t* stagedesc = NULL;
 			char ext[FS_MAX_PATH] = { 0 };
-			fs_path_extension(filename, ext);
-			if (find_shader_stage(ext, &bindesc, &stage, &stage)) {
-				combinedFlags |= desc->stages[i].flags;
+			fs_path_ext(filename, ext);
+			if (find_shader_stage(ext, &bindesc, &stagedesc, &stage)) {
 				uint32_t macrocount = desc->stages[i].macrocount;
 				shadermacro_t* macros = NULL;
 				arrsetlen(macros, macrocount);
 				for (uint32_t j = 0; j < desc->stages[i].macrocount; j++)
 					macros[j] = desc->stages[i].macros[j];
 
-				if (!load_shader_stage_byte_code(r, desc->target, stage, stages, desc->stages[i], macrocount, macros, stage)) {
+				if (!load_shader_stage_byte_code(r, desc->target, stage, stages, &desc->stages[i], macrocount, macros, stagedesc)) {
 					arrfree(macros);
 					return;
 				}
 				arrfree(macros);
 				bindesc.stages |= stage;
 				if (desc->stages[i].entrypointname)
-					stage->entrypoint = desc->stages[i].entrypointname;
+					stagedesc->entrypoint = desc->stages[i].entrypointname;
 				else
-					stage->entrypoint = "main";
+					stagedesc->entrypoint = "main";
 			}
 		}
 	}
