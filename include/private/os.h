@@ -64,14 +64,17 @@ typedef struct tc_os_i {
     /* Opens a file and returns the file handle on success or alse TC_INVALID_FILE */
     tc_fut_t* (*open)(const char* path, file_flags_t flags);
 
+    /* Closes the file */
+    tc_fut_t* (*close)(fd_t file);
+
     /* Reads a number of bytes at offset into a buffer */
     tc_fut_t* (*read)(fd_t file, char* buf, uint64_t size, int64_t offset);
 
     /* Writes a number of bytes from a buffer at an offset */
     tc_fut_t* (*write)(fd_t file, char* buf, uint64_t size, int64_t offset);
 
-    /* Closes the file */
-    tc_fut_t* (*close)(fd_t file);
+    /* Syncs the file to disk */
+    tc_fut_t* (*sync)(fd_t file);
 
     tc_fut_t* (*stat)(stat_t* stat, const char* path);
 

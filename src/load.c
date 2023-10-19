@@ -12,19 +12,21 @@
 
 extern renderertype_t selected_api;
 
-void load_byte_code(resourcedir_t dir, const char* filename, binaryshaderstagedesc_t* out)
+bool load_byte_code(resourcedir_t dir, const char* filename, binaryshaderstagedesc_t* out, uint64_t timestamp)
 {
 	char path[FS_MAX_PATH] = { 0 };
-	fs_path_join(tc_get_resource_dir(dir), filename, path);
-	fd_t fd = (fd_t)await(tc_os->open(path, FILE_READ));
-	TC_ASSERT(fd != TC_INVALID_FILE);
+	fs_path_join(fs_get_resource_dir(dir), filename, path);
 	stat_t stat;
 	await(tc_os->stat(&stat, path));
+	if (timestamp > stat.last_altered) return false;
+	fd_t fd = (fd_t)await(tc_os->open(path, FILE_READ));
+	TC_ASSERT(fd != TC_INVALID_FILE);
 	out->bytecodesize = (uint32_t)stat.size;
 	out->bytecode = tc_malloc(stat.size * sizeof(uint8_t));
 	int64_t res = await(tc_os->read(fd, out->bytecode, stat.size, 0));
 	TC_ASSERT(res >= 0);
 	tc_os->close(fd);
+	return true;
 }
 
 #if defined(VULKAN)
@@ -35,10 +37,13 @@ void vk_compile_shader(
 	TC_TEMP_INIT(temp);
 	bstring line = &(struct tagbstring)bsStatic("");
 	balloc(line, 512);
+
 	char filePath[FS_MAX_PATH] = { 0 };
-	fs_path_join(tc_get_resource_dir(R_SHADER_SOURCES), filename, filePath);
+	fs_path_join(fs_get_resource_dir(R_SHADER_SOURCES), filename, filePath);
+
 	char outpath[FS_MAX_PATH] = { 0 };
-	fs_path_join(tc_get_resource_dir(R_SHADER_BINARIES), outfile, outpath);
+	fs_path_join(fs_get_resource_dir(R_SHADER_BINARIES), outfile, outpath);
+
 	bformata(line, "-V \"%s\" -o \"%s\"", filePath, outpath);
 	if (target >= shader_target_6_0) bcatStatic(line, " --target-env vulkan1.1 ");
 	if (target >= shader_target_6_3) bcatStatic(line, " --target-env spirv1.4");
@@ -69,7 +74,7 @@ void vk_compile_shader(
 	fs_path_filename(outfile, log);
 	strcat(log, "_compile.log");
 	char logpath[FS_MAX_PATH] = { 0 };
-	fs_path_join(tc_get_resource_dir(R_SHADER_BINARIES), log, logpath);
+	fs_path_join(fs_get_resource_dir(R_SHADER_BINARIES), log, logpath);
 	if (tc_os->system_run(glslang_path, args, 1, logpath) == 0) {
 		stat_t stat;
 		await(tc_os->stat(&stat, outpath));
@@ -108,7 +113,7 @@ bool load_shader_stage_byte_code(renderer_t* r, shadertarget_t target, shadersta
 	bstring code = &(struct tagbstring)bsStatic("");
 
 	unsigned char fnamebuf[FS_MAX_PATH] = { 0 };
-	bstring filenamestr = &(struct tagbstring){FS_MAX_PATH, 0, fnamebuf};
+	bstring filenamestr = &(struct tagbstring){FS_MAX_PATH, -1, fnamebuf};
 
 	strings[n++] = code;
 	strings[n++] = filenamestr;
@@ -119,15 +124,15 @@ bool load_shader_stage_byte_code(renderer_t* r, shadertarget_t target, shadersta
 #define CLEANUP for (int i = 0; i < n; i++) bdestroy(strings[i]);
 
 	// If there are no macros specified there's no change to the shader source, we can use the binary compiled by FSL offline.
-	if (macrocount == 0) {
-		load_byte_code(R_SHADER_BINARIES, (const char*)filenamestr->data, out);
-		CLEANUP
-		return true;
-	}
+	//if (macrocount == 0) {
+	//	load_byte_code(R_SHADER_BINARIES, (const char*)filenamestr->data, out, 0);
+	//	CLEANUP
+	//	return true;
+	//}
 	TRACE(LOG_INFO, "Compiling shader in runtime: %s -> '%s' macrocount=%u", api, desc->filename, macrocount);
 
 	char path[FS_MAX_PATH] = { 0 };
-	fs_path_join(tc_get_resource_dir(R_SHADER_SOURCES), (const char*)filenamestr->data, path);
+	fs_path_join(fs_get_resource_dir(R_SHADER_SOURCES), (const char*)filenamestr->data, path);
 	fd_t f = (fd_t)await(tc_os->open(path, FILE_READ));
 	TC_ASSERT(f != TC_INVALID_FILE && "No source shader present for file");
 
@@ -148,6 +153,7 @@ bool load_shader_stage_byte_code(renderer_t* r, shadertarget_t target, shadersta
 	}
 	char ext[FS_MAX_PATH] = { 0 };
 	fs_path_ext(desc->filename, ext);
+
 	char filename[FS_MAX_PATH] = { 0 };
 	fs_path_filename(desc->filename, filename);
 
@@ -160,8 +166,7 @@ bool load_shader_stage_byte_code(renderer_t* r, shadertarget_t target, shadersta
 	strings[n++] = defines;
 	strings[n++] = bin;
 	
-	if (timestamp > stat.last_altered) {			// Shader source is newer than binary
-		load_byte_code(R_SHADER_BINARIES, (const char*)bin->data, out);
+	if (!load_byte_code(R_SHADER_BINARIES, (const char*)bin->data, out, timestamp)) {			// Shader source is newer than binary
 		switch (selected_api) {
 #if defined(VULKAN)
 			case RENDERER_VULKAN:

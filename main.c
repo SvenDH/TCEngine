@@ -84,23 +84,12 @@ static void* main_fiber(void* args) {
 		add_fence(&renderer, &rendercompletefences[i]);
 		add_semaphore(&renderer, &rendercompletesemaphores[i]);
 	}
-	
-	const char* vert_file = "..\\..\\shaders\\Binary\\base.vert.spv";
-
-	stat_t stat;
-	await(tc_os->stat(&stat, vert_file));
-	int size = stat.size;
-	char* tmp = alloca(size);
-	fd_t file = (fd_t)await(tc_os->open(vert_file, FILE_READ));
-	await(tc_os->read(file, tmp, size, 0));
 
 	shader_t shader;
 	shaderloaddesc_t desc = { 0 };
-	desc.stages[0] = { "base.vert", NULL, 0 };
-	desc.stages[1] = { "base.frag", NULL, 0 };
+	desc.stages[0] = (shaderstageloaddesc_t){ "base.vert", NULL, 0 };
+	desc.stages[1] = (shaderstageloaddesc_t){ "base.frag", NULL, 0 };
 	load_shader(&renderer, &desc, &shader);
-
-	TRACE(LOG_INFO, "%x", tmp);
 	
 	remove_swapchain(&renderer, &swapchain);
 	tc_os->destroy_window(window);
@@ -119,7 +108,8 @@ int main(void) {
 	tc_init_registry();
 	tc_fiber_pool_init(a, 256);
 
-	tc_set_resource_dir(pSystemFileIO, RM_CONTENT, RD_SHADER_SOURCES,  "Shaders");
+	fs_set_resource_dir(&systemfs, M_CONTENT, R_SHADER_SOURCES, "..\\..\\shaders");
+	fs_set_resource_dir(&systemfs, M_CONTENT, R_SHADER_BINARIES, "..\\..\\compiledshaders");
 
 	tc_renderer_init("TCEngine", &(rendererdesc_t){
 		0

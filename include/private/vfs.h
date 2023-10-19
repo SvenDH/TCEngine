@@ -56,10 +56,8 @@ typedef enum {
 	R_MIDDLEWARE_15,
 
 	____rd_lib_counter_end = ____rd_lib_counter_begin + 99 * 2,
-	R_COUNT
+	RES_COUNT
 } resourcedir_t;
-
-typedef enum { SBO_START_OF_FILE, SBO_CURRENT_POSITION, SBO_END_OF_FILE } seek_t;
 
 typedef struct vfs_s vfs_t;
 
@@ -78,26 +76,32 @@ typedef struct fstream_s {
 		mstream_t mem;
 		void* user;
 	};
-	ssize_t size;
+	intptr_t size;
 	file_flags_t flags;
 	mount_t mount;
 } fstream_t;
 
 typedef struct vfs_s {
 	bool (*open)(vfs_t* fs, const resourcedir_t dir, const char* filename, file_flags_t flags, const char* pwd, fstream_t* out);
+	/* Closes and invalidates the file stream */
 	bool (*close)(fstream_t* f);
+	/* Reads at most `len` bytes from buf and writes them into the file. Returns the number of bytes written. */
 	size_t (*read)(fstream_t* f, void* buf, size_t len);
+	/* Reads at most `len` bytes from buf and writes them into the file. Returns the number of bytes written. */
 	size_t (*write)(fstream_t* f, const void* buf, size_t len);
-	bool (*seek)(fstream_t* f, seek_t seek, ssize_t offset);
-	ssize_t (*position)(const fstream_t* f);
-	ssize_t (*size)(const fstream_t* f);
+	/* Gets the current size of the file. Returns -1 if the size is unknown or unavailable */
+	intptr_t (*size)(const fstream_t* f);
+	/* Flushes all writes to the file stream to the underlying subsystem */
 	bool (*flush)(fstream_t* f);
-	bool (*eof)(const fstream_t* f);
-	const char* (*mount)(mount_t mount);
-	bool (*getpropint64)(fstream_t* f, int32_t prop, int64_t *val);
-	bool (*setpropint64)(fstream_t* f, int32_t prop, int64_t val);
+
 	void* user;
+
 } vfs_t;
+
+extern vfs_t memfs;
+extern vfs_t systemfs;
+
+typedef struct tagbstring * bstring;
 
 void fs_parent_path(const char* path, char* output);
 
@@ -107,6 +111,28 @@ void fs_path_filename(const char* path, char* output);
 
 void fs_path_join(const char* base, const char* component, char* output);
 
-const char* tc_get_resource_dir(resourcedir_t resourcedir);
+const char* fs_get_resource_dir(resourcedir_t resourcedir);
 
-void tc_set_resource_dir(vfs_t* fs, mount_t mount, resourcedir_t resourcedir, const char* path);
+void fs_set_resource_dir(vfs_t* fs, mount_t mount, resourcedir_t resourcedir, const char* path);
+
+bool fs_open_mstream(const void* buf, size_t bufsize, file_flags_t flags, bool owner, fstream_t* out);
+
+bool fs_open_fstream(const resourcedir_t dir, const char* filename, file_flags_t flags, const char* pwd, fstream_t* out);
+
+bool fs_close_stream(fstream_t* stream);
+
+size_t fs_read_stream(fstream_t* stream, void* buf, size_t len);
+
+size_t fs_read_bstr_stream(fstream_t* stream, bstring str, size_t len);
+
+size_t fs_write_stream(fstream_t* stream, const void* buf, size_t len);
+
+bool fs_copy_stream(fstream_t* dst, fstream_t* src, size_t len);
+
+intptr_t fs_stream_size(const fstream_t* stream);
+
+bool fs_flush_stream(fstream_t* stream);
+
+bool fs_is_fstream(fstream_t* stream);
+
+bool fs_is_mstream(fstream_t* stream);

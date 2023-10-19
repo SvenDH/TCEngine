@@ -260,9 +260,9 @@ tc_fut_t* os_scandir(const char* path, tc_allocator_i* temp) {
 	return req->future;
 }
 
-tc_fut_t* os_open(const char* path, int flags) {
+tc_fut_t* os_open(const char* path, file_flags_t flags) {
 	os_request_t* req = os_request_init();
-	uv_fs_open(tc_eventloop(), &req->req, path, flags, S_IRUSR | S_IWUSR, os_cb);
+	uv_fs_open(tc_eventloop(), &req->req, path, (int)flags, S_IRUSR | S_IWUSR, os_cb);
 	return req->future;
 }
 
@@ -281,6 +281,12 @@ tc_fut_t* os_write(fd_t file, char* buf, uint64_t len, int64_t offset) {
 tc_fut_t* os_close(fd_t file) {
 	os_request_t* req = os_request_init();
 	uv_fs_close(tc_eventloop(), &req->req, file, os_cb);
+	return req->future;
+}
+
+tc_fut_t* os_sync(fd_t file) {
+	os_request_t* req = os_request_init();
+	uv_fs_fsync(tc_eventloop(), &req->req, file, os_cb);
 	return req->future;
 }
 
@@ -382,9 +388,9 @@ tc_thread_t os_get_current_thread() {
 		GetCurrentProcess(), 
 		&h, 0, FALSE, DUPLICATE_SAME_ACCESS))
 		abort();
-	return h;
+	return (tc_thread_t)h;
 #else
-	return pthread_self();
+	return (tc_thread_t)pthread_self();
 #endif
 }
 
@@ -422,7 +428,7 @@ int os_system_run(const char* cmd, const char** args, size_t numargs, const char
 {
 	tc_process_t child_req = { 0 };
 	char** pargs = (char**)alloca((numargs + 2) * sizeof(char*));
-	pargs[0] = cmd;
+	pargs[0] = (char*)cmd;
 	for (int i = 0; i < numargs; i++) pargs[i+1] = args[i];
 	pargs[numargs+1] = NULL;
 
@@ -430,7 +436,7 @@ int os_system_run(const char* cmd, const char** args, size_t numargs, const char
     child_stdio[0].flags = UV_IGNORE;
 	if (stdoutpath) {
 		uv_pipe_t apipe;
-		 uv_fs_t file_req;
+		uv_fs_t file_req;
     	int fd = uv_fs_open(tc_eventloop(), &file_req, stdoutpath, O_CREAT | O_RDWR, 0644, NULL);
 		uv_pipe_init(tc_eventloop(), &apipe, 0);
     	uv_pipe_open(&apipe, fd);
@@ -448,7 +454,8 @@ int os_system_run(const char* cmd, const char** args, size_t numargs, const char
 		.exit_cb = os_process_exit,
 		.file = cmd,
 		.args = pargs,
-		.stdio_count = 3
+		.stdio_count = 3,
+		.stdio = child_stdio
 	};
 	uv_spawn(tc_eventloop(), &child_req, &options);
 	await(fut);
@@ -460,9 +467,10 @@ const char* os_get_env(const char* name, tc_allocator_i* temp)
 	char tempbuf[1024];
 	size_t len = 1024;
 	uv_os_getenv(name, tempbuf, &len);
-	const char* ptr = TC_ALLOC(temp, len);
+	char* ptr = TC_ALLOC(temp, len + 1);
 	memcpy(ptr, tempbuf, len);
-	return ptr;
+	ptr[len] = '\0';
+	return (const char*)ptr;
 }
 
 tc_os_i* tc_os = &(tc_os_i) {
@@ -476,6 +484,7 @@ tc_os_i* tc_os = &(tc_os_i) {
 	.read = os_read,
 	.write = os_write,
 	.close = os_close,
+	.sync = os_sync,
 	.stat = os_stat,
 	.scandir = os_scandir,
 	.mkdir = os_mkdir,

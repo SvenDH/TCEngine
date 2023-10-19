@@ -145,17 +145,12 @@ static void worker_loop(worker_t* c) {
 		f = lf_lifo_pop(&context->ready);
 		if (f) { // Dont finish sched fiber in non sched owned thread
 			lf_lifo_init(&f->state);
-			if (f == &c->sched) {
-				return;
-			}
-			else if (f->id == 0 || (f->id == FIBER_MAIN_ID && c->id != 1)) {
+			if (f == &c->sched) return;
+			else if (f->id == 0 || (f->id == FIBER_MAIN_ID && c->id != 1))
 				lf_lifo_push(&context->ready, f);
-			}
 			else {
 				tc_fiber_resume(f);
-				if (f->job == NULL) {
-					fiber_destroy(f);
-				}
+				if (f->job == NULL) fiber_destroy(f);
 			}
 		}
 		job = job_next();
@@ -164,9 +159,8 @@ static void worker_loop(worker_t* c) {
 			TC_ASSERT(f && f->job == NULL);
 			fiber_start(f, job);
 			// If fiber is done we can put it on the free stack
-			if (f->job == NULL) {
+			if (f->job == NULL)
 				fiber_destroy(f);
-			}
 		}
 		uv_run(&c->loop, UV_RUN_NOWAIT);
 	}
