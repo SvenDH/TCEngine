@@ -7,7 +7,7 @@
 #include <GLFW/glfw3.h>
 #include <stb_ds.h>
 
-void* mem_map(size_t size) {
+void* os_map(size_t size) {
 #ifdef _WIN32
 	return VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 #else
@@ -19,7 +19,7 @@ void* mem_map(size_t size) {
 #endif
 }
 
-void* mem_reserve(size_t size) {
+void* os_reserve(size_t size) {
 #ifdef _WIN32
 	return VirtualAlloc(0, size, MEM_RESERVE, PAGE_READWRITE);
 #else
@@ -31,13 +31,13 @@ void* mem_reserve(size_t size) {
 #endif
 }
 
-void mem_commit(void* ptr, size_t size) {
+void os_commit(void* ptr, size_t size) {
 #ifdef _WIN32
 	VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE);
 #endif
 }
 
-void mem_unmap(void* ptr, size_t size) {
+void os_unmap(void* ptr, size_t size) {
 #ifdef _WIN32
 	(void)size;
 	VirtualFree(ptr, 0, MEM_RELEASE);
@@ -90,7 +90,7 @@ typedef struct os_request_s {
 	tc_waitable_i;
 	slab_obj_t;
 	uv_fs_t req;
-	tc_fut_t* future;
+	fut_t* future;
 	uv_buf_t buf;
 	tc_allocator_i* temp;
 } os_request_t;
@@ -217,79 +217,79 @@ os_request_t* os_request_init() {
 	return os_request_init_ex(NULL, 0, NULL);
 }
 
-tc_fut_t* os_stat(stat_t* stat, const char* path) {
+fut_t* os_stat(stat_t* stat, const char* path) {
 	os_request_t* req = os_request_init_ex(stat, sizeof(stat_t), NULL);
 	uv_fs_stat(tc_eventloop(), &req->req, path, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_rename(const char* path, const char* new_path) {
+fut_t* os_rename(const char* path, const char* new_path) {
 	os_request_t* req = os_request_init();
 	uv_fs_rename(tc_eventloop(), &req->req, path, new_path, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_link(const char* path, const char* new_path) {
+fut_t* os_link(const char* path, const char* new_path) {
 	os_request_t* req = os_request_init();
 	uv_fs_link(tc_eventloop(), &req->req, path, new_path, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_unlink(const char* path) {
+fut_t* os_unlink(const char* path) {
 	os_request_t* req = os_request_init();
 	uv_fs_unlink(tc_eventloop(), &req->req, path, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_mkdir(const char* path) {
+fut_t* os_mkdir(const char* path) {
 	os_request_t* req = os_request_init();
 	uv_fs_mkdir(tc_eventloop(), &req->req, path, 0, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_rmdir(const char* path) {
+fut_t* os_rmdir(const char* path) {
 	os_request_t* req = os_request_init();
 	uv_fs_rmdir(tc_eventloop(), &req->req, path, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_scandir(const char* path, tc_allocator_i* temp) {
+fut_t* os_scandir(const char* path, tc_allocator_i* temp) {
 	os_request_t* req = os_request_init_ex(NULL, 0, temp);
 	uv_fs_scandir(tc_eventloop(), &req->req, path, 0, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_open(const char* path, file_flags_t flags) {
+fut_t* os_open(const char* path, file_flags_t flags) {
 	os_request_t* req = os_request_init();
 	uv_fs_open(tc_eventloop(), &req->req, path, (int)flags, S_IRUSR | S_IWUSR, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_read(fd_t file, char* buf, uint64_t len, int64_t offset) {
+fut_t* os_read(fd_t file, char* buf, uint64_t len, int64_t offset) {
 	os_request_t* req = os_request_init_ex(buf, len, NULL);
 	uv_fs_read(tc_eventloop(), &req->req, file, &req->buf, 1, offset, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_write(fd_t file, char* buf, uint64_t len, int64_t offset) {
+fut_t* os_write(fd_t file, char* buf, uint64_t len, int64_t offset) {
 	os_request_t* req = os_request_init_ex(buf, len, NULL);
 	uv_fs_write(tc_eventloop(), &req->req, file, &req->buf, 1, offset, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_close(fd_t file) {
+fut_t* os_close(fd_t file) {
 	os_request_t* req = os_request_init();
 	uv_fs_close(tc_eventloop(), &req->req, file, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_sync(fd_t file) {
+fut_t* os_sync(fd_t file) {
 	os_request_t* req = os_request_init();
 	uv_fs_fsync(tc_eventloop(), &req->req, file, os_cb);
 	return req->future;
 }
 
-tc_fut_t* os_copyfile(const char* path, const char* new_path) {
+fut_t* os_copyfile(const char* path, const char* new_path) {
 	os_request_t* req = os_request_init();
 	uv_fs_copyfile(tc_eventloop(), &req->req, path, new_path, 0, os_cb);
 	return req->future;
@@ -339,7 +339,7 @@ uint32_t os_cpu_id() {
 #endif
 }
 
-uint32_t os_get_number_cpus() {
+uint32_t os_num_cpus() {
 #ifdef _WIN32
 	SYSTEM_INFO info;
 	GetSystemInfo(&info);
@@ -378,7 +378,7 @@ void os_set_thread_affinity(tc_thread_t thread, uint32_t cpu_num) {
 #endif
 }
 
-tc_thread_t os_get_current_thread() {
+tc_thread_t os_current_thread() {
 #ifdef _WIN32
 	HANDLE h = NULL;
 	if (!DuplicateHandle(
@@ -408,55 +408,64 @@ void os_destroy_window(tc_window_t window)
 }
 
 typedef struct {
-	uv_process_t;
-	int64_t exit_status;
+	tc_waitable_i;
+	uv_process_t req;
+	uv_stdio_container_t stdio[3];
+	uv_process_options_t options;
+	fut_t* future;
 	int term_signal;
+	int log_fd;
 } tc_process_t;
+
+static
+void os_process_destroy(tc_waitable_i* w)
+{
+	tc_process_t* req = (tc_process_t*)w;
+	//await(os->close(req->log_fd));
+	tc_free(req->options.args);
+	tc_free(req);
+}
 
 static
 void os_process_exit(uv_process_t* process, int64_t exit_status, int term_signal)
 {
-	tc_process_t* proc = (tc_process_t*)process;
-	tc_fut_t* fut = (tc_fut_t*)process->data;
-	proc->exit_status = exit_status;
+	tc_process_t* proc = (tc_process_t*)process->data;
+	fut_t* fut = (fut_t*)proc->future;
+	proc->results = exit_status;
 	proc->term_signal = term_signal;
 	tc_fut_decr(fut);
 }
 
-int os_system_run(const char* cmd, const char** args, size_t numargs, const char* stdoutpath)
+fut_t* os_system_run(const char* cmd, const char** args, size_t numargs, const char* stdoutpath)
 {
-	tc_process_t child_req = { 0 };
-	char** pargs = (char**)alloca((numargs + 2) * sizeof(char*));
+	tc_process_t* req = tc_calloc(1, sizeof(tc_process_t));
+	req->instance = req;
+	req->dtor = os_process_destroy;
+	req->future = tc_fut_new(context->allocator, 1, req, 4);
+	req->req.data = req;
+
+	const char** pargs = (const char**)tc_malloc((numargs + 2) * sizeof(char*));
 	pargs[0] = (char*)cmd;
 	for (int i = 0; i < numargs; i++) pargs[i+1] = args[i];
 	pargs[numargs+1] = NULL;
 
-	uv_stdio_container_t child_stdio[3];
-    child_stdio[0].flags = UV_IGNORE;
+    req->stdio[0].flags = UV_IGNORE;
 	if (stdoutpath) {
 		uv_fs_t file_req;
-    	int fd = uv_fs_open(tc_eventloop(), &file_req, stdoutpath, O_CREAT | O_RDWR, 0644, NULL);
-		child_stdio[1].flags = UV_INHERIT_FD;
-		child_stdio[1].data.fd = fd;
+		req->stdio[1].flags = UV_INHERIT_FD;
+		req->stdio[1].data.fd = uv_fs_open(tc_eventloop(), &file_req, stdoutpath, O_CREAT | O_RDWR | O_TRUNC, 0644, NULL);
 	}
-	else child_stdio[1].flags = UV_IGNORE;
-    child_stdio[2].flags = UV_INHERIT_FD;
-    child_stdio[2].data.fd = 2;
-
-	tc_fut_t* fut = tc_fut_new(context->allocator, 1, NULL, 1);
-	child_req.data = fut;
-
-	uv_process_options_t options = {
-		.exit_cb = os_process_exit,
-		.file = cmd,
-		.args = pargs,
-		.stdio_count = 3,
-		.stdio = child_stdio
-	};
-	int result = uv_spawn(tc_eventloop(), &child_req, &options);
+	else req->stdio[1].flags = UV_IGNORE;
+    req->stdio[2].flags = UV_INHERIT_FD;
+    req->stdio[2].data.fd = 2;
+	req->options.exit_cb = os_process_exit;
+	req->options.file = cmd;
+	req->options.args = pargs;
+	req->options.stdio_count = 3;
+	req->options.stdio = req->stdio;
+	int result = uv_spawn(tc_eventloop(), &req->req, &req->options);
 	TC_ASSERT(result == 0);
-	await(fut);
-	return (int)child_req.exit_status;
+	return req->future;
 }
 
 const char* os_get_env(const char* name, tc_allocator_i* temp)
@@ -469,37 +478,3 @@ const char* os_get_env(const char* name, tc_allocator_i* temp)
 	ptr[len] = '\0';
 	return (const char*)ptr;
 }
-
-tc_os_i* tc_os = &(tc_os_i) {
-	.map = mem_map,
-	.unmap = mem_unmap,
-	.commit = mem_commit,
-	.reserve = mem_reserve,
-	.page_size = os_page_size,
-	.guard_page = os_guard_page,
-	.open = os_open,
-	.read = os_read,
-	.write = os_write,
-	.close = os_close,
-	.sync = os_sync,
-	.stat = os_stat,
-	.scandir = os_scandir,
-	.mkdir = os_mkdir,
-	.rmdir = os_rmdir,
-	.rename = os_rename,
-	.link = os_link,
-	.unlink = os_unlink,
-	.copy = os_copyfile,
-	.tmpdir = os_tmpdir,
-	.getcwd = os_getcwd,
-	.chdir = os_chdir,
-	.cpu_id = os_cpu_id,
-	.num_cpus = os_get_number_cpus,
-	.create_thread = os_create_thread,
-	.current_thread = os_get_current_thread,
-	.set_thread_affinity = os_set_thread_affinity,
-	.create_window = os_create_window,
-	.destroy_window = os_destroy_window,
-	.system_run = os_system_run,
-	.get_env = os_get_env
-};

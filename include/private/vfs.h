@@ -79,6 +79,7 @@ typedef struct fstream_s {
 	intptr_t size;
 	file_flags_t flags;
 	mount_t mount;
+	void* userdata;
 } fstream_t;
 
 typedef struct vfs_s {
@@ -94,7 +95,7 @@ typedef struct vfs_s {
 	/* Flushes all writes to the file stream to the underlying subsystem */
 	bool (*flush)(fstream_t* f);
 
-	void* user;
+	void* userdata;
 
 } vfs_t;
 
@@ -136,3 +137,7 @@ bool fs_flush_stream(fstream_t* stream);
 bool fs_is_fstream(fstream_t* stream);
 
 bool fs_is_mstream(fstream_t* stream);
+
+bool init_zip_fs(const resourcedir_t dir, const char* filename, file_flags_t flags, const char* pwd, vfs_t* out);
+
+bool exit_zip_fs(vfs_t* fs);

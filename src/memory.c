@@ -40,10 +40,10 @@ void* vm_alloc(tc_allocator_i* a, void* ptr, size_t prev_size, size_t new_size, 
 {
 	void* new_ptr = NULL;
 	if (new_size) {
-		new_ptr = tc_os->map(new_size);
+		new_ptr = os_map(new_size);
 		if (prev_size) memcpy(new_ptr, ptr, prev_size);
 	}
-	if (prev_size) tc_os->unmap(ptr, prev_size);
+	if (prev_size) os_unmap(ptr, prev_size);
 	return new_ptr; 
 }
 

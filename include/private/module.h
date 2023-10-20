@@ -22,8 +22,8 @@ typedef void tc_load(tc_registry_i* reg, bool load);
 
 typedef struct tc_allocator_i tc_allocator_i;
 
-void tc_init_registry();
+void registry_init();
 
-void tc_close_registry();
+void registry_close();
 
 void load_core(tc_registry_i* registery, bool load);

@@ -5,9 +5,9 @@ tc_allocator_i* a;
 
 static void* producer(void* args) {
 	tc_channel_t* c = (tc_channel_t*)args;
-	int wid = tc_os->cpu_id();
+	int wid = os_cpu_id();
 	tc_put_t data = { c, wid };
-	TRACE(LOG_INFO, "%i, produced", tc_os->cpu_id());
+	TRACE(LOG_INFO, "%i, produced", os_cpu_id());
 	await(tc_chan_put(&data));
 	return 0;
 }
@@ -15,13 +15,13 @@ static void* producer(void* args) {
 static void* consumer(void* args) {
 	tc_channel_t* c = (tc_channel_t*)args;
 	int data = await(tc_chan_get(c));
-	TRACE(LOG_INFO, "%i, %i consumed", tc_os->cpu_id(), data);
+	TRACE(LOG_INFO, "%i, %i consumed", os_cpu_id(), data);
 	return 0;
 }
 
 static void* test2(void* args) {
 	int64_t c = (int64_t)args;
-	TRACE(LOG_INFO, "%i consumed %i", tc_os->cpu_id(), c);
+	TRACE(LOG_INFO, "%i consumed %i", os_cpu_id(), c);
 	return 0;
 }
 
@@ -32,7 +32,7 @@ static void* test(void* args) {
 		jobs[i].func = test2;
 		jobs[i].data = *b + i;
 	}
-	tc_fut_t* c = tc_run_jobs(jobs, 64, NULL);
+	fut_t* c = tc_run_jobs(jobs, 64, NULL);
 	tc_fut_wait_and_free(c, 0);
 	return 0;
 }
@@ -59,7 +59,7 @@ static void* main_fiber(void* args) {
 		.flag = QUEUE_FLAG_INIT_MICROPROFILE
 	}, &present_queue);
 	
-	window = tc_os->create_window(width, height, "TC");
+	window = os_create_window(width, height, "TC");
 
 	add_swapchain(&renderer, &(swapchaindesc_t){ 
 		.window = window,
@@ -92,7 +92,7 @@ static void* main_fiber(void* args) {
 	load_shader(&renderer, &desc, &shader);
 	
 	remove_swapchain(&renderer, &swapchain);
-	tc_os->destroy_window(window);
+	os_destroy_window(window);
 
 	return 0;
 }
@@ -105,13 +105,13 @@ int main(void) {
 
 	a = tc_buddy_new(tc_mem->vm, GLOBAL_BUFFER_SIZE, 64);
 
-	tc_init_registry();
-	tc_fiber_pool_init(a, 256);
+	registry_init();
+	fiber_pool_init(a, 256);
 
 	fs_set_resource_dir(&systemfs, M_CONTENT, R_SHADER_SOURCES, "..\\..\\shaders");
 	fs_set_resource_dir(&systemfs, M_CONTENT, R_SHADER_BINARIES, "..\\..\\compiledshaders");
 
-	tc_renderer_init("TCEngine", &(rendererdesc_t){
+	renderer_init("TCEngine", &(rendererdesc_t){
 		0
 	}, &renderer);
 
@@ -121,9 +121,9 @@ int main(void) {
 	//tc_fut_t* c = tc_run_jobs(&main_job, 1, NULL);
 	//tc_fut_wait_and_free(c, 0);
 
-	tc_renderer_exit(&renderer);
-	tc_close_registry();
-	tc_fiber_pool_destroy(a);
+	renderer_exit(&renderer);
+	registry_close();
+	fiber_pool_destroy(a);
 
 	return 0;
 }

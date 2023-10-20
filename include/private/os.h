@@ -9,7 +9,7 @@
 
 typedef struct tc_allocator_i tc_allocator_i;
 typedef struct tc_stream_i tc_stream_i;
-typedef struct tc_fut_s tc_fut_t;
+typedef struct tc_fut_s fut_t;
 typedef uint64_t tc_thread_t;
 typedef void* tc_window_t;
 
@@ -47,75 +47,69 @@ typedef struct stat_s {
 } stat_t;
 
 
-typedef struct tc_os_i {
+void* os_map(size_t size);
 
-    void* (*map)(size_t size);
+void os_unmap(void* p, size_t size);
 
-    void (*unmap)(void* p, size_t size);
+void* os_reserve(size_t size);
 
-    void* (*reserve)(size_t size);
+void os_commit(void* p, size_t size);
 
-    void (*commit)(void* p, size_t size);
+size_t os_page_size();
 
-    size_t(*page_size)();
+void os_guard_page(void* ptr, size_t size);
 
-    void (*guard_page)(void* ptr, size_t size);
+/* Opens a file and returns the file handle on success or alse TC_INVALID_FILE */
+fut_t* os_open(const char* path, file_flags_t flags);
 
-    /* Opens a file and returns the file handle on success or alse TC_INVALID_FILE */
-    tc_fut_t* (*open)(const char* path, file_flags_t flags);
+/* Closes the file */
+fut_t* os_close(fd_t file);
 
-    /* Closes the file */
-    tc_fut_t* (*close)(fd_t file);
+/* Reads a number of bytes at offset into a buffer */
+fut_t* os_read(fd_t file, char* buf, uint64_t size, int64_t offset);
 
-    /* Reads a number of bytes at offset into a buffer */
-    tc_fut_t* (*read)(fd_t file, char* buf, uint64_t size, int64_t offset);
+/* Writes a number of bytes from a buffer at an offset */
+fut_t* os_write(fd_t file, char* buf, uint64_t size, int64_t offset);
 
-    /* Writes a number of bytes from a buffer at an offset */
-    tc_fut_t* (*write)(fd_t file, char* buf, uint64_t size, int64_t offset);
+/* Syncs the file to disk */
+fut_t* os_sync(fd_t file);
 
-    /* Syncs the file to disk */
-    tc_fut_t* (*sync)(fd_t file);
+fut_t* os_stat(stat_t* stat, const char* path);
 
-    tc_fut_t* (*stat)(stat_t* stat, const char* path);
+fut_t* os_scandir(const char* path, tc_allocator_i* temp);
 
-    tc_fut_t* (*scandir)(const char* path, tc_allocator_i* temp);
+fut_t* os_mkdir(const char* path);
 
-    tc_fut_t* (*mkdir)(const char* path);
+fut_t* os_rmdir(const char* path);
 
-    tc_fut_t* (*rmdir)(const char* path);
+fut_t* os_rename(const char* path, const char* new_path);
 
-    tc_fut_t* (*rename)(const char* path, const char* new_path);
+fut_t* os_link(const char* path, const char* new_path);
 
-    tc_fut_t* (*link)(const char* path, const char* new_path);
+fut_t* os_unlink(const char* path);
 
-    tc_fut_t* (*unlink)(const char* path);
+fut_t* os_copy(const char* path, const char* new_path);
 
-    tc_fut_t* (*copy)(const char* path, const char* new_path);
+const char* os_tmpdir(tc_allocator_i* a);
 
-    const char* (*tmpdir)(tc_allocator_i* a);
+const char* os_getcwd(tc_allocator_i* a);
 
-    const char* (*getcwd)(tc_allocator_i* a);
+bool os_chdir(const char* path);
 
-    bool (*chdir)(const char* path);
+uint32_t os_cpu_id();
 
-    uint32_t (*cpu_id)();
+uint32_t os_num_cpus();
 
-    uint32_t (*num_cpus)();
+tc_thread_t os_create_thread(tc_thread_f entry, void* data, uint32_t stack_size);
 
-    tc_thread_t (*create_thread)(tc_thread_f entry, void* data, uint32_t stack_size);
+tc_thread_t os_current_thread();
 
-    tc_thread_t (*current_thread)();
+void os_set_thread_affinity(tc_thread_t thread, uint32_t cpu_num);
 
-    void (*set_thread_affinity)(tc_thread_t thread, uint32_t cpu_num);
+tc_window_t os_create_window(int width, int height, const char* title);
 
-    tc_window_t (*create_window)(int width, int height, const char* title);
+void os_destroy_window(tc_window_t window);
 
-    void (*destroy_window)(tc_window_t window);
+fut_t* os_system_run(const char* cmd, const char** args, size_t numargs, const char* stdoutpath);
 
-    int (*system_run)(const char* cmd, const char** args, size_t numargs, const char* stdoutpath);
-
-    const char* (*get_env)(const char* name, tc_allocator_i* temp);
-
-} tc_os_i;
-
-extern tc_os_i* tc_os;
+const char* os_get_env(const char* name, tc_allocator_i* temp);

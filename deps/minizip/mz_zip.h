@@ -1,8 +1,8 @@
 /* mz_zip.h -- Zip manipulation
-   part of the MiniZip project
+   part of the minizip-ng project
 
-   Copyright (C) 2010-2020 Nathan Moinvaziri
-     https://github.com/nmoinvaz/minizip
+   Copyright (C) Nathan Moinvaziri
+     https://github.com/zlib-ng/minizip-ng
    Copyright (C) 2009-2010 Mathias Svensson
      Modifications for Zip64 support
      http://result42.com
@@ -48,7 +48,8 @@ typedef struct mz_zip_file_s {
 
     uint16_t zip64;                     /* zip64 extension mode */
     uint16_t aes_version;               /* winzip aes extension if not 0 */
-    uint8_t  aes_encryption_mode;       /* winzip aes encryption mode */
+    uint8_t  aes_strength;              /* winzip aes encryption strength */
+    uint16_t pk_verify;                 /* pkware encryption verifier */
 
 } mz_zip_file, mz_zip_entry;
 
@@ -58,7 +59,7 @@ typedef int32_t (*mz_zip_locate_entry_cb)(void *handle, void *userdata, mz_zip_f
 
 /***************************************************************************/
 
-void *  mz_zip_create(void **handle);
+void *  mz_zip_create(void);
 /* Create zip instance for opening */
 
 void    mz_zip_delete(void **handle);
@@ -135,6 +136,12 @@ int32_t mz_zip_entry_write_close(void *handle, uint32_t crc32, int64_t compresse
     int64_t uncompressed_size);
 /* Close the current file for writing and set data descriptor values */
 
+int32_t mz_zip_entry_seek_local_header(void *handle);
+/* Seeks to the local header for the entry */
+
+int32_t mz_zip_entry_get_compress_stream(void *handle, void **compress_stream);
+/* Get a pointer to the compression stream used for the current entry */
+
 int32_t mz_zip_entry_close_raw(void *handle, int64_t uncompressed_size, uint32_t crc32);
 /* Close the current file in the zip file where raw is compressed data */
 
@@ -199,7 +206,7 @@ int32_t mz_zip_attrib_win32_to_posix(uint32_t win32_attrib, uint32_t *posix_attr
 
 /***************************************************************************/
 
-int32_t mz_zip_extrafield_find(void *stream, uint16_t type, uint16_t *length);
+int32_t mz_zip_extrafield_find(void *stream, uint16_t type, int32_t max_seek, uint16_t *length);
 /* Seeks to extra field by its type and returns its length */
 
 int32_t mz_zip_extrafield_contains(const uint8_t *extrafield, int32_t extrafield_size,

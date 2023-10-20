@@ -63,6 +63,14 @@
         "tinyimageformat_base.h": "c",
         "core.h": "c",
         "ranges": "c",
-        "span": "c"
+        "span": "c",
+        "tinyimageformat_query.h": "c",
+        "tinyimageformat_apis.h": "c",
+        "fstream": "c",
+        "xlocmes": "c",
+        "mz_strm.h": "c",
+        "mz_crypt.h": "c",
+        "mz_os.h": "c",
+        "mz.h": "c"
     }
 }

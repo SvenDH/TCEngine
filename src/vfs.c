@@ -1,6 +1,11 @@
 #include "private_types.h"
 
 #include "bstrlib.h"
+#include <mz.h>
+#include <mz_crypt.h>
+#include <mz_os.h>
+#include <mz_zip.h>
+#include <mz_strm.h>
 
 #define MEMORY_STREAM_GROW_SIZE 4096
 #define STREAM_COPY_BUFFER_SIZE 4096
@@ -27,14 +32,20 @@ static size_t fstream_write(fstream_t* stream, const void* buf, size_t len);
 static intptr_t fstream_size(const fstream_t* stream);
 static bool fstream_flush(fstream_t* stream);
 
+static bool zstream_open(vfs_t* fs, const resourcedir_t dir, const char* filename, file_flags_t flags, const char* pwd, fstream_t* out);
+static bool zstream_close(fstream_t* stream);
+static size_t zstream_read(fstream_t* stream, void* buf, size_t len);
+static size_t zstream_write(fstream_t* stream, const void* buf, size_t len);
+static intptr_t zstream_size(const fstream_t* stream);
+static bool zstream_flush(fstream_t* stream);
+
 vfs_t memfs = {
 	.open = NULL,
 	.close = mtream_close,
 	.read = mstream_read,
 	.write = mstream_write,
 	.size = mstream_size,
-	.flush = mstream_flush,
-	.user = NULL
+	.flush = mstream_flush
 };
 
 vfs_t systemfs = {
@@ -43,8 +54,16 @@ vfs_t systemfs = {
 	.read = fstream_read,
 	.write = fstream_write,
 	.size = fstream_size,
-	.flush = fstream_flush,
-	.user = NULL
+	.flush = fstream_flush
+};
+
+vfs_t zipfs = {
+	.open = zstream_open,
+	.close = zstream_close,
+	.read = zstream_read,
+	.write = zstream_write,
+	.size = zstream_size,
+	.flush = zstream_flush
 };
 
 static resourcedirinfo_t resdirs[RES_COUNT] = { 0 };
@@ -169,13 +188,15 @@ void fs_set_resource_dir(vfs_t* io, mount_t mount, resourcedir_t resourcedir, co
 	if (M_CONTENT == mount) dir->bundled = true;
 	strcpy(dir->path, path, FS_MAX_PATH);
 	dir->fs = io;
-	if (!dir->bundled && dir->path[0] != 0 && await(tc_os->mkdir(dir->path)))
+	if (!dir->bundled && dir->path[0] != 0 && await(os_mkdir(dir->path)))
 		TRACE(LOG_ERROR, "Could not create direcotry '%s' in filesystem", dir->path);
 }
+
 
 /************************************************************************/
 /* 							Memory Stream								*/
 /************************************************************************/
+
 static inline size_t mstream_cap(fstream_t* stream, size_t reqsize)
 {
 	return min((intptr_t)reqsize, max((intptr_t)stream->size - (intptr_t)stream->mem.cursor, (intptr_t)0));
@@ -236,67 +257,6 @@ static intptr_t mstream_size(const fstream_t* stream) { return stream->size; }
 
 static bool mstream_flush(fstream_t* stream) { return true; }
 
-
-/************************************************************************/
-/* 							File Stream									*/
-/************************************************************************/
-static bool fstream_open(vfs_t* fs, const resourcedir_t dir, const char* filename, file_flags_t flags, const char* pwd, fstream_t* out)
-{
-	if (pwd) TRACE(LOG_WARNING, "System file streams do not support encrypted files");
-	char path[FS_MAX_PATH] = { 0 };
-	const char* dir_path = fs_get_resource_dir(dir);
-	fs_path_join(dir_path, filename, path);
-	fd_t fd = (fd_t)await(tc_os->open(path, flags));
-	if (fd == TC_INVALID_FILE) return false;
-	out->fd = fd;
-	out->flags = flags;
-	out->fs = &systemfs;
-	out->mount = dir;
-	out->size = -1;
-	stat_t stat;
-	if (await(tc_os->stat(&stat, path)) == 0)
-		out->size = stat.size;
-	return true;
-}
-
-static bool fstream_close(fstream_t* stream)
-{
-	if (await(tc_os->close(stream->fd))) {
-		TRACE(LOG_ERROR, "Error closing system file stream: %s", strerror(errno));
-		return false;
-	}
-	return true;
-}
-
-static size_t fstream_read(fstream_t* stream, void* buf, size_t len)
-{
-	intptr_t bytes = await(tc_os->read(stream->fd, buf, len, -1));
-	if (bytes == EOF) TRACE(LOG_WARNING, "Error reading from system file stream: %s", strerror(errno));
-	return (size_t)bytes;
-}
-
-static size_t fstream_write(fstream_t* stream, const void* buf, size_t len)
-{
-	if ((stream->flags & (FILE_WRITE | FILE_APPEND)) == 0) {
-		TRACE(LOG_WARNING, "Writing to file stream with mode %u", stream->flags);
-		return 0;
-	}
-	intptr_t bytes = await(tc_os->write(stream->fd, buf, len, -1));
-	if (bytes == EOF) TRACE(LOG_WARNING, "Error writing to system file stream: %s", strerror(errno));
-	return bytes;
-}
-
-static intptr_t fstream_size(const fstream_t* stream) { return stream->size; }
-
-static bool fstream_flush(fstream_t* stream)
-{
-	if (await(tc_os->sync(stream->fd)) == EOF) {
-		TRACE(LOG_WARNING, "Error flushing system file stream: %s", strerror(errno));
-		return false;
-	}
-	return true;
-}
-
 bool fs_open_mstream(const void* buffer, size_t bufsize, file_flags_t flags, bool owner, fstream_t* out)
 {
 	size_t size = buffer ? bufsize : 0;
@@ -324,6 +284,393 @@ bool fs_open_mstream(const void* buffer, size_t bufsize, file_flags_t flags, boo
 	out->flags = flags;
 	return true;
 }
+
+
+/************************************************************************/
+/* 							File Stream									*/
+/************************************************************************/
+
+static bool fstream_open(vfs_t* fs, const resourcedir_t dir, const char* filename, file_flags_t flags, const char* pwd, fstream_t* out)
+{
+	if (pwd) TRACE(LOG_WARNING, "System file streams do not support encrypted files");
+	char path[FS_MAX_PATH] = { 0 };
+	const char* dir_path = fs_get_resource_dir(dir);
+	fs_path_join(dir_path, filename, path);
+	fd_t fd = (fd_t)await(os_open(path, flags));
+	if (fd == TC_INVALID_FILE) return false;
+	out->fd = fd;
+	out->flags = flags;
+	out->fs = &systemfs;
+	out->mount = dir;
+	out->size = -1;
+	stat_t stat;
+	if (await(os_stat(&stat, path)) == 0)
+		out->size = stat.size;
+	return true;
+}
+
+static bool fstream_close(fstream_t* stream)
+{
+	if (await(os_close(stream->fd))) {
+		TRACE(LOG_ERROR, "Error closing system file stream: %s", strerror(errno));
+		return false;
+	}
+	return true;
+}
+
+static size_t fstream_read(fstream_t* stream, void* buf, size_t len)
+{
+	intptr_t bytes = await(os_read(stream->fd, buf, len, -1));
+	if (bytes == EOF) TRACE(LOG_WARNING, "Error reading from system file stream: %s", strerror(errno));
+	return (size_t)bytes;
+}
+
+static size_t fstream_write(fstream_t* stream, const void* buf, size_t len)
+{
+	if ((stream->flags & (FILE_WRITE | FILE_APPEND)) == 0) {
+		TRACE(LOG_WARNING, "Writing to file stream with mode %u", stream->flags);
+		return 0;
+	}
+	intptr_t bytes = await(os_write(stream->fd, buf, len, -1));
+	if (bytes == EOF) TRACE(LOG_WARNING, "Error writing to system file stream: %s", strerror(errno));
+	return bytes;
+}
+
+static intptr_t fstream_size(const fstream_t* stream) { return stream->size; }
+
+static bool fstream_flush(fstream_t* stream)
+{
+	if (await(os_sync(stream->fd)) == EOF) {
+		TRACE(LOG_WARNING, "Error flushing system file stream: %s", strerror(errno));
+		return false;
+	}
+	return true;
+}
+
+
+/************************************************************************/
+/* 							Zip Stream									*/
+/************************************************************************/
+
+#define DEFAULT_COMPRESSION_METHOD MZ_COMPRESS_METHOD_DEFLATE
+#define MAX_PASSWORD_LENGTH 64
+
+typedef struct {
+	void* handle;
+	fstream_t fstream;
+	uint32_t opened;
+	resourcedir_t dir;
+	file_flags_t flags;
+	char filename[FS_MAX_PATH];
+	char pwd[MAX_PASSWORD_LENGTH];
+} zipfile_t;
+
+typedef struct {
+	size_t writecount;
+	char path[FS_MAX_PATH];
+	char password[MAX_PASSWORD_LENGTH];
+} zstream_t;
+
+static bool force_open_zip(zipfile_t* zip, bool first)
+{
+	resourcedir_t dir = zip->dir;
+	const char* filename = zip->filename;
+	const char* password = zip->pwd;
+	if (password[0] == '\0') password = NULL;
+	file_flags_t mode = zip->flags;
+	if (!first) mode |= FILE_READ;
+	if (mode & FILE_APPEND) mode |= FILE_READWRITE;
+	// Need to exclude append as we need the ability to freely move cursor for zip files
+	if (!fs_open_fstream(dir, filename, mode & ~FILE_APPEND, password, &zip->fstream)) {
+		TRACE(LOG_ERROR, "Failed to open zip file %s.", filename);
+		return false;
+	}
+	if (!mz_zip_open(zip->handle, &zip->fstream, mode)) {
+		TRACE(LOG_ERROR, "Failed to open zip handle to file %s.", filename);
+		fs_close_stream(&zip->fstream);
+		return false;
+	}
+	return true;
+}
+
+static bool force_close_zip(zipfile_t* zip)
+{
+	bool noerr = true;
+	if (!mz_zip_close(zip->handle)) noerr = false;
+	if (!fs_close_stream(&zip->fstream)) noerr = false;
+	return noerr;
+}
+
+static bool cleanup_zip(zipfile_t* zip, bool result)
+{
+	mz_zip_delete(&zip->handle);
+	tc_free(zip);
+	return result;
+}
+
+bool fs_open_zip(vfs_t* fs)
+{
+	TC_ASSERT(fs && fs->userdata);
+	if (zipfs.open != fs->open) return false;
+	zipfile_t* zip = (zipfile_t*)fs->userdata;
+	if (zip->opened == 0 && !force_open_zip(zip, false))
+		return false;
+	++zip->opened;
+	return true;
+}
+
+bool fs_close_zip(vfs_t* fs)
+{
+	TC_ASSERT(fs && fs->userdata);
+	if (zipfs.close != fs->close) return false;
+	zipfile_t* zip = (zipfile_t*)fs->userdata;
+	if (zip->opened == 0) {
+		TRACE(LOG_ERROR, "Double close of zip file '%s'", zip->filename);
+		return true;
+	}
+	--zip->opened;
+	if (zip->opened == 0) return force_close_zip(zip);
+	return true;
+}
+
+/***************************************************************
+	Zip Entry
+***************************************************************/
+
+static bool zstream_open(vfs_t* fs, const resourcedir_t dir, const char* filename, file_flags_t mode, const char* pwd, fstream_t* out)
+{
+	TC_ASSERT(fs && out);
+	if (mode & FILE_APPEND) mode |= FILE_WRITE;
+	bool noerr = true;
+	zipfile_t* zipfile = (zipfile_t*)fs->userdata;
+	void* zip = zipfile->handle;
+	if (!fs_open_zip(fs)) {		// make sure that zip file is opened
+		TRACE(LOG_ERROR, "Failed to open zip file, while trying to access zip entry.");
+		return false;
+	}
+	fstream_t* strm;
+	mz_zip_get_stream(zip, &strm);
+	file_flags_t zipmode = strm->flags;
+	if ((mode & zipmode) != mode) {
+		TRACE(LOG_WARNING, "Trying to open zip entry '%s' in file mode mode '%i', while zip file was opened in '%i' mode.", filename, mode, zipmode);
+		fs_close_zip(fs);
+		return false;
+	}
+	void* buffer = NULL;
+	size_t len = 0;
+	zstream_t* entry = tc_calloc(1, sizeof(zstream_t));
+	if (!entry) {
+		TRACE(LOG_ERROR, "Failed to allocate memory for file entry %s in zip", filename);
+		fs_close_zip(fs);
+		return false;
+	}
+	fs_path_join(fs_get_resource_dir(dir), filename, entry->path);
+	if ((mode & FILE_READ) || (mode & FILE_APPEND)) {
+		noerr = mz_zip_locate_entry(zip, entry->path, 0);
+		if (noerr || !(mode & FILE_WRITE)) {	// Ignore error if write mode is enabled
+			if (!noerr) {
+				TRACE(LOG_WARNING, "Couldn't find file entry '%s' in zip.", entry->path);
+				tc_free(entry);
+				fs_close_zip(fs);
+				return false;
+			}
+			noerr = mz_zip_entry_read_open(zip, 0, pwd);
+			if (!noerr) {
+				TRACE(LOG_ERROR, "Couldn't open file entry '%s' in zip.", entry->path);
+				tc_free(entry);
+				fs_close_zip(fs);
+				return false;
+			}
+			mz_zip_file* info;
+			noerr = mz_zip_entry_get_local_info(zip, &info);
+			if (!noerr) {
+				TRACE(LOG_ERROR, "Couldn't get info on file entry '%s' in zip.", entry->path);
+				mz_zip_entry_close(zip);
+				tc_free(entry);
+				fs_close_zip(fs);
+				return false;
+			}
+			len = info->uncompressed_size;
+			if (len > 0) {
+				buffer = tc_malloc(len);
+				if (!buffer) {
+					TRACE(LOG_ERROR, "Couldn't allocate buffer for reading zip file entry '%s'.", entry->path);
+					mz_zip_entry_close(zip);
+					tc_free(entry);
+					fs_close_zip(fs);
+					return false;
+				}
+				size_t read = mz_zip_entry_read(zip, buffer, (int32_t)len);
+				if (read != len) {
+					TRACE(LOG_ERROR, "Couldn't read zip file entry '%s'.", entry->path);
+					tc_free(buffer);
+					mz_zip_entry_close(zip);
+					tc_free(entry);
+					fs_close_zip(fs);
+					return false;
+				}
+				mz_zip_entry_close(zip);
+			}
+			mz_zip_entry_close(zip);
+		}
+	}
+	fstream_t* mstream = tc_malloc(sizeof(fstream_t));
+	if (!mstream) {
+		TRACE(LOG_ERROR, "Couldn't allocate memory for memory stream for zip file entry '%s'.", entry->path);
+		tc_free(buffer);
+		tc_free(entry);
+		fs_close_zip(fs);
+		return false;
+	}
+	if (!fs_open_mstream(buffer, len, mode, true, mstream)) {
+		TRACE(LOG_ERROR, "Couldn't open memory stream for zip file entry '%s'.", entry->path);
+		tc_free(buffer);
+		tc_free(entry);
+		fs_close_zip(fs);
+		return false;
+	}
+	if ((mode & FILE_WRITE) && pwd) {				// We need to store password only if we are planning to write
+		size_t pwdlen = strlen(pwd);
+		if (pwdlen >= MAX_PASSWORD_LENGTH) {
+			TRACE(LOG_ERROR, "Provided password for zip entry '%s' is too long.", filename);
+			fs_close_zip(fs);
+			return false;
+		}
+		strncpy(entry->password, pwd, pwdlen);
+	}
+	out->fs = fs;
+	out->flags = mode;
+	out->base = mstream;
+	out->userdata = entry;
+	return true;
+}
+
+static bool zstream_flush(fstream_t* stream)
+{
+	if (!(stream->flags & (FILE_WRITE | FILE_APPEND))) return true;
+	bool noerr = true;
+	fstream_t* mstream = stream->base;
+	TC_ASSERT(mstream);
+	zipfile_t* zipfile = (zipfile_t*)stream->fs->userdata;
+	void* zip = zipfile->handle;
+	zstream_t* entry = (zstream_t*)stream->userdata;
+	const char* password = entry->password;
+	if (password[0] == '\0') password = NULL;
+	fstream_t* fstream;
+	mz_zip_get_stream(zip, &fstream);
+	mz_zip_file info = (mz_zip_file) { 0 };
+	info.version_madeby = MZ_VERSION_MADEBY;
+	info.compression_method = DEFAULT_COMPRESSION_METHOD;
+	info.filename = entry->path;
+	info.filename_size = (uint16_t)strlen(entry->path);
+	info.uncompressed_size = fs_stream_size(mstream);
+	if (password) info.aes_version = MZ_AES_VERSION;
+	mz_zip_file* pinfo = &info;
+	if (mz_zip_locate_entry(zip, entry->path, 0))
+		mz_zip_entry_get_info(zip, &pinfo);
+	
+	noerr = mz_zip_entry_write_open(zip, pinfo, MZ_COMPRESS_LEVEL_DEFAULT, 0, password);
+	if (!noerr) {
+		TRACE(LOG_ERROR, "Failed to open file entry '%s' for write in zip.", entry->path);
+		return false;
+	}
+	const void* buf = mstream->mem.buffer;
+	size_t memlen = (size_t)fs_stream_size(mstream);
+	if (memlen > 0) {
+		noerr = mz_zip_entry_write(zip, buf, (int32_t)memlen) == memlen;
+		if (!noerr) TRACE(LOG_WARNING, "Failed to write %ul bytes to zip file entry '%s'.", (unsigned long)memlen, entry->path);
+	}
+	if (!mz_zip_entry_close(zip)) {
+		TRACE(LOG_WARNING, "Failed to close zip entry '%s'.", entry->path);
+		noerr = false;
+	}
+	return noerr;
+}
+
+static bool zstream_close(fstream_t* stream)
+{	
+	TC_ASSERT(stream && stream->fs);
+	vfs_t* fs = stream->fs;
+	bool noerr = true;
+	if (!fs_flush_stream(stream)) noerr = false;
+	if (!fs_close_stream(stream->base)) noerr = false;
+	tc_free(stream->base);
+	tc_free(stream->userdata);
+	if (!fs_close_zip(fs)) noerr = false;
+	return noerr;
+}
+
+static size_t zstream_read(fstream_t* stream, void* buf, size_t len)
+{
+	return fs_read_stream(stream->base, buf, len);
+}
+
+static size_t zstream_write(fstream_t* stream, const void* buf, size_t len)
+{
+	return fs_write_stream(stream->base, buf, len);
+}
+
+static intptr_t zstream_size(const fstream_t* stream)
+{
+	return fs_stream_size(stream->base);
+}
+
+/***************************************************************
+	Zip File System
+***************************************************************/
+
+bool init_zip_fs(const resourcedir_t dir, const char* filename, file_flags_t flags, const char* pwd, vfs_t* out)
+{
+	if (pwd && pwd[0] == '\0') pwd = NULL;
+	if ((flags & FILE_READWRITE) == FILE_READWRITE || (flags & (FILE_READ | FILE_APPEND)) == (FILE_READ | FILE_APPEND)) {
+		TRACE(LOG_WARNING, "Simultaneous read and write for zip files is error prone. Use with cautious.");
+	}
+	size_t filenamelen = strlen(filename);
+	if (filenamelen >= FS_MAX_PATH) {
+		TRACE(LOG_ERROR, "filename '%s' is too big.", filename);
+		return false;
+	}
+	size_t pwdlen = 0;
+	if (pwd) pwdlen = strlen(pwd);
+	if (pwdlen >= MAX_PASSWORD_LENGTH) {
+		TRACE(LOG_ERROR, "Password for file '%s' is too big.", filename);
+		return false;
+	}
+	zipfile_t* zip = tc_calloc(1, sizeof(zipfile_t));
+	mz_zip_create(&zip->handle);
+	zip->opened = 0;
+	zip->dir = dir;
+	zip->flags = flags;
+	memcpy(zip->filename, filename, filenamelen);
+	if (pwd) memcpy(zip->pwd, pwd, pwdlen);
+	if (!force_open_zip(zip, true)) {
+		TRACE(LOG_ERROR, "Failed to open zip file '%s'", filename);
+		return cleanup_zip(zip, false);
+	}
+	if (!force_close_zip(zip)) {				// Close everything and reopen when the entries are opened
+		TRACE(LOG_ERROR, "Failed to close zip file '%s'", filename);
+		return cleanup_zip(zip, false);
+	}
+	vfs_t system = zipfs;
+	system.userdata = zip;
+	*out = system;
+	return true;
+}
+
+bool exit_zip_fs(vfs_t* fs)
+{
+	TC_ASSERT(fs && fs->userdata);
+	if (fs->close != zipfs.close) return false;
+	zipfile_t* zip = (zipfile_t*)fs->userdata;
+	bool noerr = true;
+	if (zip->opened != 0) {
+		TRACE(LOG_WARNING, "Closing zip file '%s' when there are %u opened entries left.", zip->filename, zip->opened);
+		zip->opened = 0;
+		force_close_zip(zip);
+	}
+	return cleanup_zip(zip, noerr);
+}
+
 
 bool fs_is_fstream(fstream_t* stream) { return stream->fs == &systemfs; }
 

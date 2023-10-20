@@ -399,7 +399,7 @@ static renderpassnode_t** get_render_pass_map(uint32_t rid)
 {
 	spin_lock(&renderpasslck[rid]);
 	threadrpnode_t* map = renderpasses[rid];
-	tc_thread_t tid = tc_os->current_thread();
+	tc_thread_t tid = os_current_thread();
 	threadrpnode_t* node = hmgetp_null(map, tid);
 	if (!node) {	// We need pointer to map, so that thread map can be reallocated without causing data races
 		renderpassnode_t** result = (renderpassnode_t**)tc_calloc(1, sizeof(renderpassnode_t*));
@@ -415,7 +415,7 @@ static framebuffernode_t** get_frame_buffer_map(uint32_t rid)
 {
 	spin_lock(&renderpasslck[rid]);
 	threadfbnode_t* map = framebuffers[rid];
-	tc_thread_t tid = tc_os->current_thread();
+	tc_thread_t tid = os_current_thread();
 	threadfbnode_t* node = hmgetp_null(map, tid);
 	if (!node) {
 		framebuffernode_t** result = (framebuffernode_t**)tc_calloc(1, sizeof(framebuffernode_t*));

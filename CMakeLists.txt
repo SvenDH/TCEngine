@@ -76,8 +76,8 @@ add_subdirectory(deps/deboost.context)
 
 # Add minizip
 #set(MZ_ZSTD OFF CACHE BOOL "" FORCE)
-#add_subdirectory(deps/minizip)
-#include_directories(deps/minizip)
+include_directories(deps/minizip)
+add_subdirectory(deps/minizip)
 
 if (WIN32)
    set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_WIN32_KHR)
@@ -100,7 +100,7 @@ target_compile_options(tc PRIVATE /experimental:c11atomics /std:c11)
 
 # Put all libraries in LIBS 
 #set(LIBS fcontext ZLIB::ZLIB minizip uv_a glfw volk GPUOpen::VulkanMemoryAllocator tc "${CMAKE_DL_LIBS}")
-set(LIBS fcontext uv_a glfw volk GPUOpen::VulkanMemoryAllocator tc "${CMAKE_DL_LIBS}")
+set(LIBS fcontext uv_a minizip glfw volk GPUOpen::VulkanMemoryAllocator tc "${CMAKE_DL_LIBS}")
 
 add_executable(${PROJECT_NAME} main.c)
 

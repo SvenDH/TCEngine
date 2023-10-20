@@ -180,7 +180,7 @@ typedef struct slab_cache_s {
 static void* cache_realloc(tc_allocator_i* a, void* ptr, size_t old_size, size_t new_size, const char* file, uint32_t line);
 
 tc_allocator_i* tc_buddy_new(tc_allocator_i* a, uint32_t size, uint32_t min_size) {
-	uint32_t id = tc_os->cpu_id();
+	uint32_t id = os_cpu_id();
 	// We first create a buddy allocator to allocate our free lists and other buddy allocators from
 	// Make sure min size is cache alligned against false sharing
 	uint8_t* data = TC_ALLOC(a, size);
@@ -189,7 +189,7 @@ tc_allocator_i* tc_buddy_new(tc_allocator_i* a, uint32_t size, uint32_t min_size
 	slab_cache_t* cache = buddy_alloc_block(first_buddy, level);
 	// Create extra cache for worker thread
 	cache->parent = a;
-	cache->num_threads = tc_os->num_cpus();
+	cache->num_threads = os_num_cpus();
 	TC_ASSERT(cache->num_threads <= MAX_BUDDY_THREADS);
 	cache->nr_levels = first_buddy->nr_levels;
 	uint32_t cache_size = sizeof(thread_cache_t) * cache->num_threads;
@@ -286,7 +286,7 @@ void cache_release(slab_cache_t* sc, void* ptr, size_t size, uint32_t thread_id)
 static
 void* cache_realloc(tc_allocator_i* a, void* ptr, size_t old_size, size_t new_size, const char* file, uint32_t line) {
 	slab_cache_t* sc = a->instance;
-	uint32_t id = tc_os->cpu_id();
+	uint32_t id = os_cpu_id();
 	if (!ptr) {
 		return cache_malloc(sc, new_size, id);
 	}

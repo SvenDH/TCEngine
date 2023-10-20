@@ -1,13 +1,19 @@
-# Minizip Documentation  <!-- omit in toc -->
+# minizip-ng Documentation  <!-- omit in toc -->
 
 ### Table of Contents
 
 - [API](#api)
 - [Limitations](#limitations)
+- [Minimum OS Requirements](#minimum-os-requirements)
 - [Xcode Instructions](#xcode-instructions)
 - [Zlib Configuration](#zlib-configuration)
 - [Upgrading from 1.x](#upgrading-from-1x)
 - [Security Considerations](#security-considerations)
+- [Using Streams](#using-streams)
+  - [Memory Stream](#memory-stream)
+  - [Buffered Stream](#buffered-stream)
+  - [Disk Splitting Stream](#disk-splitting-stream)
+  - [Additional Code Examples](#additional-code-examples)
 
 ## API
 
@@ -42,7 +48,7 @@
 
 ### Extrafield Proposals <!-- omit in toc -->
 
-The zip reader and writer interface provides support for extended hash algorithms for zip entries, compression of the central directory, and the adding and verifying of CMS signatures for each entry. In order to add support for these features, extrafields were added and are described in the [minizip extrafield documentation](mz_extrafield.md).
+The zip reader and writer interface provides support for extended hash algorithms for zip entries and compression of the central directory. In order to add support for these features, extrafields were added and are described in the [minizip extrafield documentation](mz_extrafield.md).
 
 ## Limitations
 
@@ -54,6 +60,16 @@ The zip reader and writer interface provides support for extended hash algorithm
 
 * Windows Explorer zip extraction utility does not support disk splitting. [1](https://stackoverflow.com/questions/31286707/the-same-volume-can-not-be-used-as-both-the-source-and-destination)
 * macOS archive utility does not properly support ZIP files over 4GB. [1](http://web.archive.org/web/20140331005235/http://www.springyarchiver.com/blog/topic/topic/203) [2](https://bitinn.net/10716/)
+
+## Minimum OS Requirements
+
+Actively supported minimum operating system versions:
+
+* Windows Vista
+* macOS 10.13
+* Ubuntu 18
+
+Pull requests can be submitted to maintain support for older versions.
 
 ## Xcode Instructions
 
@@ -103,7 +119,7 @@ instance, some #defines will have to be set as they have changed.
 
 |1.x|2.x|Description|
 |-|-|:-|
-||HAVE_ZLIB|Compile with ZLIB library. Older verisons of Minizip required ZLIB. It is now possible to alternatively compile only using liblzma library.|
+||HAVE_ZLIB|Compile with ZLIB library. Older versions of Minizip required ZLIB. It is now possible to alternatively compile only using liblzma library.|
 ||HAVE_LZMA|Compile with LZMA support.|
 |HAVE_BZIP2|HAVE_BZIP2|Compile with BZIP2 library support.|
 |HAVE_APPLE_COMPRESSION|HAVE_LIBCOMP|Compile using Apple Compression library.|
@@ -113,19 +129,16 @@ instance, some #defines will have to be set as they have changed.
 |NOCRYPT|Nearest to MZ_ZIP_NO_ENCRYPTION|Previously turned off all encryption support.|
 ||MZ_ZIP_NO_ENCRYPTION|Turns off all encryption/decryption support.|
 |NO_ADDFILEINEXISTINGZIP||Not currently supported.|
-|IOWIN32_USING_WINRT_API|MZ_WINRT_API|Enable WinRT API support in Win32 file I/O stream.|
 ||MZ_ZIP_NO_COMPRESSION|Intended to reduce compilation size if not using zipping functionality.|
 ||MZ_ZIP_NO_COMPRESSION|Intended to reduce compilation size if not using zipping functionality.|
 
-At a minimum HAVE_ZLIB and HAVE_PKCRYPT will be necessary to be defined for drop-in replacement. To determine which files to drop in, see the Contents section of the [README](https://github.com/nmoinvaz/minizip/blob/master/README.md).
-
-The compatibility layer for 1.x does not currently provide support for the `ioapi` interface; it has been replaced with a new streaming interface. It is possible to create a stream interface in a similar way that you would have created an  ioapi interface.
+At a minimum HAVE_ZLIB and HAVE_PKCRYPT will be necessary to be defined for drop-in replacement. To determine which files to drop in, see the Contents section of the [README](https://github.com/zlib-ng/minizip-ng/blob/master/README.md).
 
 ## Security Considerations
 
 ### WinZip AES <!-- omit in toc -->
 
-When compressing an archive with WinZIP AES enabled, by default it uses 256 bit encryption. During decompression minizip will use whatever bit encryption was specified when the entry was added to the archive.
+When compressing an archive with WinZIP AES enabled, by default it uses 256 bit encryption. During decompression whatever bit encryption was specified when the entry was added to the archive will be used.
 
 WinZip AES encryption uses CTR on top of ECB which prevents identical ciphertext blocks that might occur when using ECB by itself. More details about the WinZIP AES format can be found in the [winzip documentation](zip/winzip_aes.md).
 
@@ -138,3 +151,119 @@ In order to create a secure zip file you must:
 * Sign the zip file using a certificate
 
 The combination of using AES encryption and zipping the central directory prevents data leakage through filename exposure.
+
+## Using Streams
+
+All input/output operations are done through the use of streams.
+
+### Memory Stream
+
+To unzip from a zip file in memory pass the memory stream to the open function.
+```c
+uint8_t *zip_buffer = NULL;
+int32_t zip_buffer_size = 0;
+void *mem_stream = NULL;
+void *zip_handle = NULL;
+
+/* TODO: fill zip_buffer with zip contents.. */
+
+mem_stream = mz_stream_mem_create();
+mz_stream_mem_set_buffer(mem_stream, zip_buffer, zip_buffer_size);
+mz_stream_open(mem_stream, NULL, MZ_OPEN_MODE_READ);
+
+zip_handle = mz_zip_create();
+err = mz_zip_open(zip_handle, mem_stream, MZ_OPEN_MODE_READ);
+
+/* TODO: unzip operations.. */
+
+mz_zip_close(zip_handle);
+mz_zip_delete(&zip_handle);
+
+mz_stream_mem_delete(&mem_stream);
+```
+
+To create a zip file in memory first create a growable memory stream and pass it to the open function.
+
+```c
+void *mem_stream = NULL;
+void *zip_handle = NULL;
+
+mem_stream = mz_stream_mem_create();
+mz_stream_mem_set_grow_size(mem_stream, (128 * 1024));
+mz_stream_open(mem_stream, NULL, MZ_OPEN_MODE_CREATE);
+
+zip_handle = mz_zip_create();
+err = mz_zip_open(zip_handle, mem_stream, MZ_OPEN_MODE_WRITE);
+
+/* TODO: unzip operations.. */
+
+mz_zip_close(zip_handle);
+mz_zip_delete(&zip_handle);
+
+mz_stream_mem_delete(&mem_stream);
+```
+
+For a complete example, see test_stream_mem() in [test.c](https://github.com/nmoinvaz/minizip/blob/master/test/test.c).
+
+### Buffered Stream
+
+By default the library will read bytes typically one at a time. The buffered stream allows for buffered read and write operations to improve I/O performance.
+
+```c
+void *stream = NULL;
+void *buf_stream = NULL;
+void *zip_handle = NULL;
+
+stream = mz_stream_os_create()
+
+/* TODO: open os stream.. */
+
+buf_stream = mz_stream_buffered_create();
+mz_stream_buffered_open(buf_stream, NULL, MZ_OPEN_MODE_READ);
+mz_stream_buffered_set_base(buf_stream, stream);
+
+zip_handle = mz_zip_create();
+err = mz_zip_open(zip_handle, buf_stream, MZ_OPEN_MODE_READ);
+
+/* TODO: unzip operation.. */
+
+mz_zip_close(zip_handle);
+mz_zip_delete(&zip_handle);
+
+mz_stream_buffered_delete(&buf_stream);
+```
+
+### Disk Splitting Stream
+
+To create an archive with multiple disks use the disk splitting stream and supply a disk size value in bytes.
+
+```c
+void *stream = NULL;
+void *split_stream = NULL;
+void *zip_handle = NULL;
+
+stream = mz_stream_os_create();
+
+split_stream = mz_stream_split_create();
+mz_stream_split_set_prop_int64(split_stream, MZ_STREAM_PROP_DISK_SIZE, 64 * 1024);
+mz_stream_set_base(split_stream, stream);
+mz_stream_open(split_stream, path..
+
+zip_handle = mz_zip_create();
+err = mz_zip_open(zip_handle, split_stream, MZ_OPEN_MODE_WRITE);
+
+/* TODO: unzip operation.. */
+
+mz_zip_close(zip_handle);
+mz_zip_delete(&zip_handle);
+
+mz_stream_buffered_delete(&split_stream);
+```
+
+### Additional Code Examples
+
+Some of these may be out of date, but they can also be helpful.
+
+* [Compressed stream tests](https://github.com/zlib-ng/minizip-ng/blob/master/test/test_stream_compress.cc)
+* [Code to copy raw entries from one zip file to another](https://gist.github.com/chenxiaolong/bcbb0835182ef16a25f09db8d99e0619) by chenxiaolong
+* [Buffered streaming](https://gist.github.com/chenxiaolong/dbab3fbef51b9d0fa969e220dbb85967) by chenxiaolong

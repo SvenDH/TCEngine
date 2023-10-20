@@ -1,8 +1,8 @@
 /* mz_strm_pkcrypt.h -- Code for traditional PKWARE encryption
-   part of the MiniZip project
+   part of the minizip-ng project
 
-   Copyright (C) 2010-2020 Nathan Moinvaziri
-     https://github.com/nmoinvaz/minizip
+   Copyright (C) Nathan Moinvaziri
+     https://github.com/zlib-ng/minizip-ng
 
    This program is distributed under the terms of the same license as zlib.
    See the accompanying LICENSE file for the full text of the license.
@@ -32,7 +32,7 @@ void    mz_stream_pkcrypt_get_verify(void *stream, uint8_t *verify1, uint8_t *ve
 int32_t mz_stream_pkcrypt_get_prop_int64(void *stream, int32_t prop, int64_t *value);
 int32_t mz_stream_pkcrypt_set_prop_int64(void *stream, int32_t prop, int64_t value);
 
-void*   mz_stream_pkcrypt_create(void **stream);
+void*   mz_stream_pkcrypt_create(void);
 void    mz_stream_pkcrypt_delete(void **stream);
 
 void*   mz_stream_pkcrypt_get_interface(void);

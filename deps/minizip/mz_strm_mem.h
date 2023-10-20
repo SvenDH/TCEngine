@@ -1,8 +1,8 @@
 /* mz_strm_mem.h -- Stream for memory access
-   part of MiniZip project
+   part of the minizip-ng project
 
-   Copyright (C) 2010-2020 Nathan Moinvaziri
-      https://github.com/nmoinvaz/minizip
+   Copyright (C) Nathan Moinvaziri
+      https://github.com/zlib-ng/minizip-ng
 
    This program is distributed under the terms of the same license as zlib.
    See the accompanying LICENSE file for the full text of the license.
@@ -34,7 +34,7 @@ void    mz_stream_mem_get_buffer_length(void *stream, int32_t *length);
 void    mz_stream_mem_set_buffer_limit(void *stream, int32_t limit);
 void    mz_stream_mem_set_grow_size(void *stream, int32_t grow_size);
 
-void*   mz_stream_mem_create(void **stream);
+void*   mz_stream_mem_create(void);
 void    mz_stream_mem_delete(void **stream);
 
 void*   mz_stream_mem_get_interface(void);

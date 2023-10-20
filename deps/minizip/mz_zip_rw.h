@@ -1,8 +1,8 @@
 /* mz_zip_rw.h -- Zip reader/writer
-   part of the MiniZip project
+   part of the minizip-ng project
 
-   Copyright (C) 2010-2020 Nathan Moinvaziri
-     https://github.com/nmoinvaz/minizip
+   Copyright (C) Nathan Moinvaziri
+     https://github.com/zlib-ng/minizip-ng
 
    This program is distributed under the terms of the same license as zlib.
    See the accompanying LICENSE file for the full text of the license.
@@ -67,12 +67,6 @@ int32_t mz_zip_reader_entry_close(void *handle);
 int32_t mz_zip_reader_entry_read(void *handle, void *buf, int32_t len);
 /* Reads and entry after being opened */
 
-int32_t mz_zip_reader_entry_has_sign(void *handle);
-/* Checks to see if the entry has a signature  */
-
-int32_t mz_zip_reader_entry_sign_verify(void *handle);
-/* Verifies a signature stored with the entry */
-
 int32_t mz_zip_reader_entry_get_hash(void *handle, uint16_t algorithm, uint8_t *digest, int32_t digest_size);
 /* Gets a hash algorithm from the entry's extra field */
 
@@ -86,7 +80,7 @@ int32_t mz_zip_reader_entry_is_dir(void *handle);
 /* Gets the current entry is a directory */
 
 int32_t mz_zip_reader_entry_save(void *handle, void *stream, mz_stream_write_cb write_cb);
-/* Save the current entry to a steam */
+/* Save the current entry to a stream */
 
 int32_t mz_zip_reader_entry_save_process(void *handle, void *stream, mz_stream_write_cb write_cb);
 /* Saves a portion of the current entry to a stream callback */
@@ -131,9 +125,6 @@ int32_t mz_zip_reader_set_recover(void *handle, uint8_t recover);
 void    mz_zip_reader_set_encoding(void *handle, int32_t encoding);
 /* Sets whether or not it should support a special character encoding in zip file names. */
 
-void    mz_zip_reader_set_sign_required(void *handle, uint8_t sign_required);
-/* Sets whether or not it a signature is required  */
-
 void    mz_zip_reader_set_overwrite_cb(void *handle, void *userdata, mz_zip_reader_overwrite_cb cb);
 /* Callback for what to do when a file is being overwritten */
 
@@ -152,7 +143,7 @@ void    mz_zip_reader_set_entry_cb(void *handle, void *userdata, mz_zip_reader_e
 int32_t mz_zip_reader_get_zip_handle(void *handle, void **zip_handle);
 /* Gets the underlying zip instance handle */
 
-void*   mz_zip_reader_create(void **handle);
+void*   mz_zip_reader_create(void);
 /* Create new instance of zip reader */
 
 void    mz_zip_reader_delete(void **handle);
@@ -170,7 +161,7 @@ typedef int32_t (*mz_zip_writer_entry_cb)(void *handle, void *userdata, mz_zip_f
 int32_t mz_zip_writer_is_open(void *handle);
 /* Checks to see if the zip file is open */
 
-int32_t mz_zip_writer_open(void *handle, void *stream);
+int32_t mz_zip_writer_open(void *handle, void *stream, uint8_t append);
 /* Opens zip file from stream */
 
 int32_t mz_zip_writer_open_file(void *handle, const char *path, int64_t disk_size, uint8_t append);
@@ -181,8 +172,6 @@ int32_t mz_zip_writer_open_file_in_memory(void *handle, const char *path);
 
 int32_t mz_zip_writer_close(void *handle);
 /* Closes the zip file */
-
-int32_t mz_zip_writer_open_int(void* handle, void* stream, int32_t mode);
 
 /***************************************************************************/
 
@@ -272,7 +261,7 @@ void    mz_zip_writer_set_entry_cb(void *handle, void *userdata, mz_zip_writer_e
 int32_t mz_zip_writer_get_zip_handle(void *handle, void **zip_handle);
 /* Gets the underlying zip handle */
 
-void*   mz_zip_writer_create(void **handle);
+void*   mz_zip_writer_create(void);
 /* Create new instance of zip writer */
 
 void    mz_zip_writer_delete(void **handle);

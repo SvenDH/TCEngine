@@ -26,7 +26,7 @@ typedef struct {
 typedef struct ALIGNED(job_s, 64) {
 	job_func func;
 	void* data;
-	tc_fut_t* future;
+	fut_t* future;
 	uint32_t id;
 	jobrequest_t* req;
 } job_t;
@@ -55,7 +55,7 @@ typedef struct {
 	tc_waitable_i;
 	slab_obj_t;
 	uv_timer_t handle;
-	tc_fut_t* future;
+	fut_t* future;
 	uint64_t timeout;
 	uint64_t repeats;
 } timer_t;
@@ -178,9 +178,9 @@ static void worker_init(struct worker_args* args) {
 	c->id = args->id;
 	sprintf(&c->name, args->name, args->id);
 	// Initialize thread id and assign thread to cpu
-	c->tid = tc_os->current_thread();
+	c->tid = os_current_thread();
 
-	tc_os->set_thread_affinity(c->tid, args->id);
+	os_set_thread_affinity(c->tid, args->id);
 	// Initialize scheduling fiber
 	fiber_create(&c->sched, 0, NULL);
 	strcpy(&c->sched.name, "sched");
@@ -240,11 +240,11 @@ static void fiber_loop(fcontext_transfer_t t)
 	}
 }
 
-void tc_fiber_pool_init(tc_allocator_i* a, uint32_t num_fibers)
+void fiber_pool_init(tc_allocator_i* a, uint32_t num_fibers)
 {
 	TC_ASSERT(sizeof(fiber_t) <= CHUNK_SIZE);
 	
-	uint32_t num_cords = tc_os->num_cpus();
+	uint32_t num_cords = os_num_cpus();
 
 	context = TC_ALLOC(a, sizeof(fiber_context_t));
 	memset(context, 0, sizeof(fiber_context_t));
@@ -285,7 +285,7 @@ void tc_fiber_pool_init(tc_allocator_i* a, uint32_t num_fibers)
 		memset(c, 0, FIBER_STACK_SIZE);
 		context->workers[i] = c;
 		struct worker_args args = (struct worker_args){ c, "worker_%i", i };
-		tc_os->create_thread(worker_entry, &args, CHUNK_SIZE);
+		os_create_thread(worker_entry, &args, CHUNK_SIZE);
 
 		uv_sem_wait(&context->sem);
 	}
@@ -295,7 +295,7 @@ void tc_fiber_pool_init(tc_allocator_i* a, uint32_t num_fibers)
 	slab_create(&context->timer_pool, a, CHUNK_SIZE);
 }
 
-void tc_fiber_pool_destroy(tc_allocator_i* a)
+void fiber_pool_destroy(tc_allocator_i* a)
 {
 	slab_destroy(context->timer_pool);
 
@@ -377,8 +377,8 @@ static void fiber_init(fiber_t* fiber, uint32_t id, fiber_func func)
 		fiber->stack_size = FIBER_STACK_SIZE - 3 * CHUNK_SIZE;
 		fiber->stack_ptr = ((char*)fiber) + 2 * CHUNK_SIZE;
 		// Setup guard pages around the stack for protection against stack overflow
-		tc_os->guard_page(fiber->stack_ptr - CHUNK_SIZE, CHUNK_SIZE);
-		tc_os->guard_page(fiber->stack_ptr + fiber->stack_size, CHUNK_SIZE);
+		os_guard_page(fiber->stack_ptr - CHUNK_SIZE, CHUNK_SIZE);
+		os_guard_page(fiber->stack_ptr + fiber->stack_size, CHUNK_SIZE);
 		// Set stack begin to begin or end of buffer depending of OS stack grow direction
 		int dummy = 0;
 		if (stack_direction(&dummy) < 0)
@@ -432,11 +432,11 @@ typedef struct tc_fut_s {
 	atomic_t value;
 	uint32_t num_slots;
 	tc_waitable_i* waitable;
-} tc_fut_t;
+} fut_t;
 
 
 /* Atomic counter methods, used for waiting */
-static void counter_wakeup(tc_fut_t* c, size_t value)
+static void counter_wakeup(fut_t* c, size_t value)
 {
 	fiber_entry* slots = (fiber_entry*)(c + 1);
 	for (uint32_t i = 0; i < c->num_slots; i++) {
@@ -460,7 +460,7 @@ static void counter_wakeup(tc_fut_t* c, size_t value)
 	}
 }
 
-static bool counter_add_to_waiting(tc_fut_t* c, size_t value)
+static bool counter_add_to_waiting(fut_t* c, size_t value)
 {
 	fiber_t* f = tc_fiber();
 	fiber_entry* slots = (fiber_entry*)(c + 1);
@@ -489,10 +489,10 @@ static bool counter_add_to_waiting(tc_fut_t* c, size_t value)
 	return false;
 }
 
-tc_fut_t* tc_fut_new(tc_allocator_i* a, size_t value, tc_waitable_i* waitable, uint32_t num_slots)
+fut_t* tc_fut_new(tc_allocator_i* a, size_t value, tc_waitable_i* waitable, uint32_t num_slots)
 {
-	tc_fut_t* c = TC_ALLOC(a, sizeof(tc_fut_t) + num_slots * sizeof(fiber_entry));
-	memset(c, 0, sizeof(tc_fut_t) + num_slots * sizeof(fiber_entry));
+	fut_t* c = TC_ALLOC(a, sizeof(fut_t) + num_slots * sizeof(fiber_entry));
+	memset(c, 0, sizeof(fut_t) + num_slots * sizeof(fiber_entry));
 	c->a = a;
 	c->num_slots = num_slots;
 	c->waitable = waitable;
@@ -503,35 +503,35 @@ tc_fut_t* tc_fut_new(tc_allocator_i* a, size_t value, tc_waitable_i* waitable, u
 	return c;
 }
 
-void tc_fut_free(tc_fut_t* c)
+void tc_fut_free(fut_t* c)
 {
 	if (c->waitable && c->waitable->dtor && c->waitable->instance)
 		c->waitable->dtor(c->waitable->instance);
-	TC_FREE(c->a, c, sizeof(tc_fut_t) + c->num_slots * sizeof(fiber_entry));
+	TC_FREE(c->a, c, sizeof(fut_t) + c->num_slots * sizeof(fiber_entry));
 }
 
-size_t tc_fut_incr(tc_fut_t* c)
+size_t tc_fut_incr(fut_t* c)
 {
 	size_t val = atomic_fetch_add_explicit(&c->value, 1, memory_order_seq_cst) + 1;
 	counter_wakeup(c, val);
 	return val;
 }
 
-size_t tc_fut_decr(tc_fut_t* c)
+size_t tc_fut_decr(fut_t* c)
 {
 	size_t val = atomic_fetch_sub_explicit(&c->value, 1, memory_order_seq_cst) - 1;
 	counter_wakeup(c, val);
 	return val;
 }
 
-int64_t tc_fut_wait(tc_fut_t* c, size_t value)
+int64_t tc_fut_wait(fut_t* c, size_t value)
 {
 	bool done = counter_add_to_waiting(c, value);
 	if (!done) tc_fiber_yield(NULL);
 	return c->waitable->results;
 }
 
-int64_t tc_fut_wait_and_free(tc_fut_t* c, size_t value)
+int64_t tc_fut_wait_and_free(fut_t* c, size_t value)
 {
 	int64_t result = tc_fut_wait(c, value);
 	tc_fut_free(c);
@@ -543,7 +543,7 @@ int64_t tc_fut_wait_and_free(tc_fut_t* c, size_t value)
 /*							JOBS							*/
 /*==========================================================*/
 
-tc_fut_t* tc_run_jobs(jobdecl_t* jobs, uint32_t num_jobs, int64_t* results)
+fut_t* tc_run_jobs(jobdecl_t* jobs, uint32_t num_jobs, int64_t* results)
 {
 	// Allocate space for request struct and additional jobs
 	jobrequest_t* req = TC_ALLOC(
@@ -555,7 +555,7 @@ tc_fut_t* tc_run_jobs(jobdecl_t* jobs, uint32_t num_jobs, int64_t* results)
 	req->results = 0;
 	req->result_ptr = results;
 
-	tc_fut_t* future = tc_fut_new(context->a, num_jobs, req, 4);
+	fut_t* future = tc_fut_new(context->a, num_jobs, req, 4);
 	job_t* j = (job_t*)((size_t)req + sizeof(jobrequest_t));
 	for (uint32_t i = 0; i < num_jobs; i++) {
 		j[i].func = jobs[i].func;
@@ -614,7 +614,7 @@ void timer_destroy(timer_t* timer)
 	TC_UNLOCK(&context->timer_pool_lock);
 }
 
-tc_fut_t* tc_timer_start(uint64_t timeout, uint64_t repeats)
+fut_t* tc_timer_start(uint64_t timeout, uint64_t repeats)
 {
 	if (repeats) {
 		TC_LOCK(&context->timer_pool_lock);
@@ -709,7 +709,7 @@ static int64_t _channel_get(void* arg)
 	}
 }
 
-tc_fut_t* tc_chan_get(tc_channel_t* channel)
+fut_t* tc_chan_get(tc_channel_t* channel)
 {
 	return tc_run_jobs(&(jobdecl_t) { .func = _channel_get, .data = channel }, 1, NULL);
 }
@@ -760,7 +760,7 @@ static int64_t _channel_put(void* arg)
 	}
 }
 
-tc_fut_t* tc_chan_put(tc_put_t* put_data)
+fut_t* tc_chan_put(tc_put_t* put_data)
 {
 	return tc_run_jobs(&(jobdecl_t) { .func = _channel_put, .data = put_data }, 1, NULL);
 }

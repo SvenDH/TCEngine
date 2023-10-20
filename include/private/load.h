@@ -17,3 +17,9 @@ typedef struct {
 	const shaderconstant_t* constants;
 	uint32_t constantcount;
 } shaderloaddesc_t;
+
+typedef struct {
+	uint64_t buffersize;
+	uint32_t buffercount;
+	bool singlethreaded;
+} resourceloaderdesc_t;

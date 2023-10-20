@@ -121,12 +121,12 @@ void remove_implementation(const char* name, void* data) {
 	TC_ASSERT(0, "[Module]: Could not find implementation for %s", name);
 }
 
-void tc_init_registry() {
+void registry_init() {
 	state = malloc(sizeof(struct internal_registry));
 	memset(state, 0, sizeof(struct internal_registry));
 }
 
-void tc_close_registry() {
+void registry_close() {
 	free(state, sizeof(struct internal_registry));
 }
 
@@ -141,8 +141,6 @@ tc_registry_i* tc_registry = &(tc_registry_i) {
 void load_core(tc_registry_i* registery, bool load) {
 	if (load) {
 		tc_registry->set(TC_REGISTRY_MODULE_NAME, tc_registry, sizeof(tc_registry_i));
-
-		tc_registry->set(TC_OS_MODULE_NAME, tc_os, sizeof(tc_os_i));
 
 		tc_registry->set(TC_ALLOCATION_MODULE_NAME, tc_mem, sizeof(tc_memory_i));
 	}
