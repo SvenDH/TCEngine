@@ -154,7 +154,7 @@ void init_context(void) {
 static 
 void os_cb(uv_fs_t* req) {
 	os_request_t* handle = (os_request_t*)req->data;
-	int64_t res = uv_fs_get_result(req);;
+	int64_t res = uv_fs_get_result(req);
 	handle->results = res;
 	if (req->fs_type == UV_FS_SCANDIR) {
 		if (handle->buf.base) {
@@ -175,7 +175,7 @@ void os_cb(uv_fs_t* req) {
 	else if (req->fs_type == UV_FS_STAT) {
 		if (handle->buf.base) {
 			uv_stat_t* stats = uv_fs_get_statbuf(req);
-			stat_t* nstat = handle->buf.base;
+			stat_t* nstat = (stat_t*)handle->buf.base;
 			nstat->exists = (res == 0);
 			nstat->is_dir = (stats->st_mode & S_IFDIR);
 			nstat->size = stats->st_size;
@@ -183,9 +183,8 @@ void os_cb(uv_fs_t* req) {
 		}
 	}
 	else if (req->fs_type == UV_FS_OPEN) {
-		if (res < 0) {
+		if (res < 0)
 			handle->results = TC_INVALID_FILE;
-		}
 	}
 	uv_fs_req_cleanup(&handle->req);
 	tc_fut_decr(handle->future);
@@ -435,13 +434,10 @@ int os_system_run(const char* cmd, const char** args, size_t numargs, const char
 	uv_stdio_container_t child_stdio[3];
     child_stdio[0].flags = UV_IGNORE;
 	if (stdoutpath) {
-		uv_pipe_t apipe;
 		uv_fs_t file_req;
     	int fd = uv_fs_open(tc_eventloop(), &file_req, stdoutpath, O_CREAT | O_RDWR, 0644, NULL);
-		uv_pipe_init(tc_eventloop(), &apipe, 0);
-    	uv_pipe_open(&apipe, fd);
-		child_stdio[1].flags = UV_CREATE_PIPE | UV_READABLE_PIPE;
-		child_stdio[1].data.stream = (uv_stream_t *) &apipe;
+		child_stdio[1].flags = UV_INHERIT_FD;
+		child_stdio[1].data.fd = fd;
 	}
 	else child_stdio[1].flags = UV_IGNORE;
     child_stdio[2].flags = UV_INHERIT_FD;
@@ -457,7 +453,7 @@ int os_system_run(const char* cmd, const char** args, size_t numargs, const char
 		.stdio_count = 3,
 		.stdio = child_stdio
 	};
-	uv_spawn(tc_eventloop(), &child_req, &options);
+	TC_ASSERT(uv_spawn(tc_eventloop(), &child_req, &options) == 0);
 	await(fut);
 	return (int)child_req.exit_status;
 }
