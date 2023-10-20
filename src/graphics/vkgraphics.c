@@ -6,7 +6,7 @@
 #include "stb_ds.h"
 
 #include <vk_mem_alloc.h>
-
+#include <spirv_cross_c.h>
 #include <tinyimageformat_base.h>
 #include <tinyimageformat_query.h>
 
@@ -3905,9 +3905,8 @@ void vk_add_rootsignature(renderer_t* r, const rootsignaturedesc_t* desc, rootsi
 			pushconsts[descinfo->handleindex].stageFlags = descinfo->vk.stages;
 		}
 	}
-	// Create descriptor layouts
-	// Put least frequently changed params first
-	for (uint32_t i = DESCRIPTOR_UPDATE_FREQ_COUNT; i >= 0; i--) {
+	// Create descriptor layouts. Put least frequently changed params first
+	for (uint32_t i = DESCRIPTOR_UPDATE_FREQ_COUNT; i-- > 0;) {
 		updatefreqinfo_t* layout = &layouts[i];
 		if (arrlen(layouts[i].bindings))			// sort table by type (CBV/SRV/UAV) by register
 			sortVkDescriptorSetLayoutBinding(layout->bindings, arrlenu(layout->bindings));
@@ -5989,7 +5988,7 @@ void vk_create_shaderreflection(const uint8_t* code, uint32_t codesize, shaderst
 		TRACE(LOG_ERROR, "Create Shader Refection failed. Invalid reflection output!");
 		return;
 	}
-	/*
+	
 	CrossCompiler cc;
 	CreateCrossCompiler((const uint32_t*)code, codesize / sizeof(uint32_t), &cc);
 	ReflectEntryPoint(&cc);

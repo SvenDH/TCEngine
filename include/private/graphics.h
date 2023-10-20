@@ -406,7 +406,7 @@ typedef enum {
 
 typedef enum { QUERY_TYPE_TIMESTAMP, QUERY_TYPE_PIPELINE_STATS, QUERY_TYPE_OCCLUSION, QUERY_TYPE_COUNT } querytype_t;
 
-typedef enum { SAMPLER_RANGE_FULL = 0, SAMPLER_RANGE_NARROW = 1 } samplerrange_t;
+typedef enum { SAMPLER_RANGE_FULL, SAMPLER_RANGE_NARROW } samplerrange_t;
 
 typedef enum { SAMPLE_LOCATION_COSITED, SAMPLE_LOCATION_MIDPOINT } samplelocation_t;
 
@@ -452,15 +452,15 @@ typedef enum {
 typedef enum { GPU_MODE_SINGLE, GPU_MODE_LINKED, GPU_MODE_UNLINKED } gpumode_t;
 
 typedef enum {
-	ROOT_SIGNATURE_FLAG_NONE = 0,			// Default flag
-	ROOT_SIGNATURE_FLAG_LOCAL_BIT = 0x1,	// Local root signature used mainly in raytracing shaders
+	ROOT_SIGNATURE_FLAG_NONE,				// Default flag
+	ROOT_SIGNATURE_FLAG_LOCAL_BIT,			// Local root signature used mainly in raytracing shaders
 } rootsignatureflags_t;
 
 typedef enum {
-	MARKER_TYPE_DEFAULT = 0x0,
-	MARKER_TYPE_IN = 0x1,
-	MARKER_TYPE_OUT = 0x2,
-	MARKER_TYPE_IN_OUT = 0x3,
+	MARKER_TYPE_DEFAULT,
+	MARKER_TYPE_IN,
+	MARKER_TYPE_OUT,
+	MARKER_TYPE_IN_OUT,
 } markertype_t;
 
 typedef enum { FENCE_COMPLETE, FENCE_INCOMPLETE, FENCE_NOTSUBMITTED } fencestatus_t;
@@ -504,8 +504,8 @@ typedef struct { uint32_t offset; uint32_t size; } range32_t;
 
 typedef struct {
 	querytype_t type;
-	uint32_t  querycount;
-	uint32_t  nodeIndex;
+	uint32_t querycount;
+	uint32_t nodeidx;
 } querypooldesc_t;
 
 typedef struct { uint32_t index; } querydesc_t;

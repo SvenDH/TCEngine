@@ -88,6 +88,9 @@ include_directories(deps/volk)
 include_directories(deps/VulkanMemoryAllocator/include)  
 add_subdirectory(deps/VulkanMemoryAllocator)
 
+add_subdirectory(deps/SPIRV-Cross)
+include_directories(deps/SPIRV-Cross)
+
 include_directories(deps/tiny_imageformat)
 
 include_directories(deps/rmem/inc)
@@ -100,7 +103,7 @@ target_compile_options(tc PRIVATE /experimental:c11atomics /std:c11)
 
 # Put all libraries in LIBS 
 #set(LIBS fcontext ZLIB::ZLIB minizip uv_a glfw volk GPUOpen::VulkanMemoryAllocator tc "${CMAKE_DL_LIBS}")
-set(LIBS fcontext uv_a minizip glfw volk GPUOpen::VulkanMemoryAllocator tc "${CMAKE_DL_LIBS}")
+set(LIBS fcontext uv_a minizip glfw volk GPUOpen::VulkanMemoryAllocator spirv-cross-c-shared tc "${CMAKE_DL_LIBS}")
 
 add_executable(${PROJECT_NAME} main.c)
 
