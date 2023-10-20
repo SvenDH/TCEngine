@@ -35,16 +35,16 @@ void vk_compile_shader(
 	shadermacro_t* macros, binaryshaderstagedesc_t* out, const char* entrypoint)
 {
 	TC_TEMP_INIT(temp);
-	bstring line = &(struct tagbstring)bsStatic("");
+	bstring line = bfromcstr("");
 	balloc(line, 512);
 
-	char filePath[FS_MAX_PATH] = { 0 };
-	fs_path_join(fs_get_resource_dir(R_SHADER_SOURCES), filename, filePath);
+	char filepath[FS_MAX_PATH] = { 0 };
+	fs_path_join(fs_get_resource_dir(R_SHADER_SOURCES), filename, filepath);
 
 	char outpath[FS_MAX_PATH] = { 0 };
 	fs_path_join(fs_get_resource_dir(R_SHADER_BINARIES), outfile, outpath);
 
-	bformata(line, "-V \"%s\" -o \"%s\"", filePath, outpath);
+	bformata(line, "-V \"%s\" -o \"%s\"", filepath, outpath);
 	if (target >= shader_target_6_0) bcatStatic(line, " --target-env vulkan1.1 ");
 	if (target >= shader_target_6_3) bcatStatic(line, " --target-env spirv1.4");
 	if (entrypoint != NULL) bformata(line, " -e %s", entrypoint);
@@ -63,11 +63,11 @@ void vk_compile_shader(
 	if (vksdkstr) {
 		glslang_path = (char*)tc_calloc(strlen(vksdkstr) + 64, sizeof(char));
 		strcpy(glslang_path, vksdkstr);
-		strcat(glslang_path, "/bin/glslang_path");
+		strcat(glslang_path, "/bin/glslangValidator");
 	}
 	else {
 		glslang_path = (char*)tc_calloc(64, sizeof(char));
-		strcpy(glslang_path, "/usr/bin/glslang_path");
+		strcpy(glslang_path, "/usr/bin/glslangValidator");
 	}
 	const char* args[1] = { (const char*)line->data };
 	char log[FS_MAX_PATH] = { 0 };

@@ -453,7 +453,8 @@ int os_system_run(const char* cmd, const char** args, size_t numargs, const char
 		.stdio_count = 3,
 		.stdio = child_stdio
 	};
-	TC_ASSERT(uv_spawn(tc_eventloop(), &child_req, &options) == 0);
+	int result = uv_spawn(tc_eventloop(), &child_req, &options);
+	TC_ASSERT(result == 0);
 	await(fut);
 	return (int)child_req.exit_status;
 }
