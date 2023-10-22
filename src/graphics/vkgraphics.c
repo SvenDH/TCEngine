@@ -5971,16 +5971,21 @@ void exit_vulkanrenderer(renderer_t* r)
 	TC_ASSERT(r);
 	vk_exit_renderer(r);
 }
-/*
-bool _filter_resource(SPIRV_Resource* resource, ShaderStage currentStage)
+
+bool _filter_resource(const spvc_reflected_resource* resource, shaderstage_t stage)
 {
 	bool filter = false;
-	filter = filter || (resource->is_used == false);
-	filter = filter || (resource->type == SPIRV_Resource_Type::SPIRV_TYPE_STAGE_OUTPUTS);
-	filter = filter || (resource->type == SPIRV_Resource_Type::SPIRV_TYPE_STAGE_INPUTS && currentStage != SHADER_STAGE_VERT);
+	filter = filter || (resource->type_id == SPVC_BUILTIN_RESOURCE_TYPE_STAGE_OUTPUT);
+	filter = filter || (resource->type_id == SPVC_BUILTIN_RESOURCE_TYPE_STAGE_INPUT && stage != SHADER_STAGE_VERT);
 	return filter;
 }
-*/
+
+static descriptortype_t SPIRV_TO_DESCRIPTOR[SPVC_RESOURCE_TYPE_SHADER_RECORD_BUFFER + 1] = {
+	DESCRIPTOR_TYPE_UNDEFINED,        DESCRIPTOR_TYPE_UNDEFINED,    DESCRIPTOR_TYPE_UNIFORM_BUFFER,  DESCRIPTOR_TYPE_RW_BUFFER,
+	DESCRIPTOR_TYPE_TEXTURE,          DESCRIPTOR_TYPE_RW_TEXTURE,   DESCRIPTOR_TYPE_SAMPLER,         DESCRIPTOR_TYPE_ROOT_CONSTANT,
+	DESCRIPTOR_TYPE_INPUT_ATTACHMENT, DESCRIPTOR_TYPE_TEXEL_BUFFER, DESCRIPTOR_TYPE_RW_TEXEL_BUFFER, DESCRIPTOR_TYPE_RAY_TRACING,
+	DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+};
 
 void vk_create_shaderreflection(const uint8_t* code, uint32_t codesize, shaderstage_t stage, shaderreflection_t* out)
 {
@@ -5988,7 +5993,137 @@ void vk_create_shaderreflection(const uint8_t* code, uint32_t codesize, shaderst
 		TRACE(LOG_ERROR, "Create Shader Refection failed. Invalid reflection output!");
 		return;
 	}
+	spvc_context context = NULL;
+	spvc_parsed_ir ir = NULL;
+	spvc_compiler compiler = NULL;
+	spvc_context_create(&context);
+	spvc_context_parse_spirv(context, (uint32_t*)code, codesize / sizeof(uint32_t), &ir);
+	spvc_context_create_compiler(context, SPVC_BACKEND_GLSL, ir, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, &compiler);
+
+	spvc_entry_point* entrypoints = NULL;
+	size_t num_entrypoints;
+	spvc_compiler_get_entry_points(compiler, &entrypoints, &num_entrypoints);
+
+	spvc_set active_interface_variables = NULL;
+	spvc_compiler_get_active_interface_variables(compiler, &active_interface_variables);
+
+	spvc_resources s_resources = NULL;
+	spvc_compiler_create_shader_resources_for_active_variables(compiler, &s_resources, active_interface_variables);
+
+	uint32_t entrypointlen = (uint32_t)strlen(entrypoints[0].name);
+	uint32_t namepool_size = entrypointlen + 1;
+	uint32_t num_resources = 0;
+	uint32_t num_variables = 0;
+	uint32_t num_vertexinputs = 0;
+	uint32_t shader_resource_count = 0;
+
+#define SETUP_RESOURCE_TYPE(t, e) \
+	size_t t##_count; \
+	const spvc_reflected_resource* t##_list = NULL; \
+	spvc_resources_get_resource_list_for_type(s_resources, (e), &t##_list, &t##_count); \
+	shader_resource_count += (uint32_t)t##_count; \
+	for (uint32_t i = 0; i < t##_count; i++) { \
+		const spvc_reflected_resource* resource = &t##_list[i]; \
+		if (!_filter_resource(resource, stage)) { \
+			namepool_size += (uint32_t)strlen(resource->name) + 1; \
+			if (e == SPVC_RESOURCE_TYPE_STAGE_INPUT && stage == SHADER_STAGE_VERT) \
+				num_vertexinputs++; \
+			else \
+				num_resources++; \
+		} \
+	}
+
+	SETUP_RESOURCE_TYPE(stage_inputs, SPVC_RESOURCE_TYPE_STAGE_INPUT);						// inputs
+	SETUP_RESOURCE_TYPE(stage_outputs, SPVC_RESOURCE_TYPE_STAGE_OUTPUT);					// outputs
+	SETUP_RESOURCE_TYPE(uniform, SPVC_RESOURCE_TYPE_UNIFORM_BUFFER);						// const buffers
+	SETUP_RESOURCE_TYPE(storage, SPVC_RESOURCE_TYPE_STORAGE_BUFFER);						// buffers
+	SETUP_RESOURCE_TYPE(separate_images, SPVC_RESOURCE_TYPE_SEPARATE_IMAGE);				// textures
+	SETUP_RESOURCE_TYPE(storage_images,SPVC_RESOURCE_TYPE_STORAGE_IMAGE);					// uav textures
+	SETUP_RESOURCE_TYPE(separate_samplers, SPVC_RESOURCE_TYPE_SEPARATE_SAMPLERS);			// samplers
+	SETUP_RESOURCE_TYPE(sampled_images, SPVC_RESOURCE_TYPE_SAMPLED_IMAGE);					// combined samplers
+	SETUP_RESOURCE_TYPE(pushconstant_buffer, SPVC_RESOURCE_TYPE_PUSH_CONSTANT);				// push constants
+	SETUP_RESOURCE_TYPE(subpass_inputs, SPVC_RESOURCE_TYPE_SUBPASS_INPUT);					// input attachments
+	SETUP_RESOURCE_TYPE(acceleration_structures, SPVC_RESOURCE_TYPE_ACCELERATION_STRUCTURE);// raytracing structures
+
+	char* namepool = NULL;
+	if (namepool_size) namepool = (char*)tc_calloc(1, namepool_size);
+	char* current = namepool;
+	out->entrypoint = current;
+	memcpy(current, entrypoints[0].name, entrypointlen);
+	current += entrypointlen + 1;
+
+	uint32_t* index_remap = NULL;
+	shaderresource_t* resources = NULL;
+	uint32_t j = 0;
+	uint32_t k = 0;
+	if (num_resources) {
+		index_remap = (uint32_t*)tc_malloc(sizeof(uint32_t) * shader_resource_count);
+		resources = (shaderresource_t*)tc_malloc(sizeof(shaderresource_t) * num_resources);
+
+#define PROCESS_RESOURCE_TYPE(t, e) \
+		for (uint32_t i = 0; i < t##_count; i++) { \
+			const spvc_reflected_resource* resource = &t##_list[i]; \
+			index_remap[k] = -1; \
+			if (!_filter_resource(resource, stage) && \
+				resource->type_id != SPVC_RESOURCE_TYPE_STAGE_INPUT) { \
+				index_remap[k] = j; \
+				spvc_type type = spvc_compiler_get_type_handle(compiler, resource->type_id); \
+				uint32_t dim; \
+				switch (spvc_type_get_image_dimension(type)) { \
+				case SpvDimBuffer: dim = TEXTURE_UNDEFINED; break; \
+				case SpvDim1D: dim = spvc_type_get_image_arrayed(type) ? TEXTURE_1D_ARRAY : TEXTURE_1D; break; \
+				case SpvDim2D: \
+					if (spvc_type_get_image_multisampled(type)) dim = spvc_type_get_image_arrayed(type) ? TEXTURE_2DMS_ARRAY : TEXTURE_2DMS; \
+					else dim =spvc_type_get_image_arrayed(type) ? TEXTURE_2D_ARRAY : TEXTURE_2D; \
+					break; \
+				case SpvDim3D: dim = TEXTURE_3D; break; \
+				case SpvDimCube: dim = spvc_type_get_image_arrayed(type) ? TEXTURE_CUBE_ARRAY : TEXTURE_CUBE; break; \
+				default: dim = TEXTURE_UNDEFINED; break; \
+				} \
+				resources[j].type = SPIRV_TO_DESCRIPTOR[e]; \
+				resources[j].set = e == SPVC_RESOURCE_TYPE_STAGE_INPUT || \
+						e == SPVC_RESOURCE_TYPE_STAGE_OUTPUT || \
+						e == SPVC_RESOURCE_TYPE_PUSH_CONSTANT ? -1 : \
+						spvc_compiler_get_decoration(compiler, t##_list[i].id, SpvDecorationDescriptorSet); \
+				resources[j].reg = spvc_compiler_get_decoration(compiler, t##_list[i].id, SpvDecorationLocation); \
+				resources[j].size = (spvc_type_get_bit_width(type) / 8) * spvc_type_get_vector_size(type); \
+				resources[j].used_stages = stage; \
+				resources[j].name = current; \
+				resources[j].name_len = (uint32_t)strlen(resource->name); \
+				resources[j].dim = dim; \
+				memcpy(current, resource->name, resources[j].name_len); \
+				current += resources[j].name_len + 1; \
+				j++; \
+			} \
+			k++; \
+		}
+
+		PROCESS_RESOURCE_TYPE(stage_inputs, SPVC_RESOURCE_TYPE_STAGE_INPUT);
+		PROCESS_RESOURCE_TYPE(stage_outputs, SPVC_RESOURCE_TYPE_STAGE_OUTPUT);
+		PROCESS_RESOURCE_TYPE(uniform, SPVC_RESOURCE_TYPE_UNIFORM_BUFFER);
+		PROCESS_RESOURCE_TYPE(storage, SPVC_RESOURCE_TYPE_STORAGE_BUFFER);
+		PROCESS_RESOURCE_TYPE(separate_images, SPVC_RESOURCE_TYPE_SEPARATE_IMAGE);
+		PROCESS_RESOURCE_TYPE(storage_images,SPVC_RESOURCE_TYPE_STORAGE_IMAGE);
+		PROCESS_RESOURCE_TYPE(separate_samplers, SPVC_RESOURCE_TYPE_SEPARATE_SAMPLERS);
+		PROCESS_RESOURCE_TYPE(sampled_images, SPVC_RESOURCE_TYPE_SAMPLED_IMAGE);
+		PROCESS_RESOURCE_TYPE(pushconstant_buffer, SPVC_RESOURCE_TYPE_PUSH_CONSTANT);
+		PROCESS_RESOURCE_TYPE(subpass_inputs, SPVC_RESOURCE_TYPE_SUBPASS_INPUT);
+		PROCESS_RESOURCE_TYPE(acceleration_structures, SPVC_RESOURCE_TYPE_ACCELERATION_STRUCTURE);
+	}
+
+	spvc_context_destroy(context);
 	
+	// all refection structs should be built now
+	out->stage = stage;
+	out->namepool = namepool;
+	out->namepoolsize = namepool_size;
+	out->pVertexInputs = vertexInputs;
+	out->mVertexInputsCount = vertexInputCount;
+	out->pShaderResources = pResources;
+	out->mShaderResourceCount = resourceCount;
+	out->pVariables = pVariables;
+	out->mVariableCount = variablesCount;
+
 	CrossCompiler cc;
 	CreateCrossCompiler((const uint32_t*)code, codesize / sizeof(uint32_t), &cc);
 	ReflectEntryPoint(&cc);
@@ -6012,9 +6147,9 @@ void vk_create_shaderreflection(const uint8_t* code, uint32_t codesize, shaderst
 		if (!_filter_resource(resource, stage)) {
 			namePoolSize += resource->name_size + 1;
 			if (resource->type == SPIRV_Resource_Type::SPIRV_TYPE_STAGE_INPUTS && stage == SHADER_STAGE_VERT)
-				++vertexInputCount++;
+				vertexInputCount++;
 			else
-				++resourceCount++;
+				resourceCount++;
 		}
 	}
 	for (uint32_t i = 0; i < cc.UniformVariablesCount; i++) {
@@ -6057,7 +6192,6 @@ void vk_create_shaderreflection(const uint8_t* code, uint32_t codesize, shaderst
 		}
 	}
 	uint32_t* indexRemap = NULL;
-	shaderresource_t* pResources = NULL;
 	// continue with resources
 	if (resourceCount) {
 		indexRemap = (uint32_t*)tf_malloc(sizeof(uint32_t) * cc.ShaderResourceCount);
@@ -6114,7 +6248,7 @@ void vk_create_shaderreflection(const uint8_t* code, uint32_t codesize, shaderst
 	tc_free(indexRemap);
 	DestroyCrossCompiler(&cc);
 	// all refection structs should be built now
-	out->mShaderStage = stage;
+	out->stage = stage;
 	out->pNamePool = namePool;
 	out->mNamePoolSize = namePoolSize;
 	out->pVertexInputs = pVertexInputs;

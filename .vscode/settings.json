@@ -71,6 +71,9 @@
         "mz_strm.h": "c",
         "mz_crypt.h": "c",
         "mz_os.h": "c",
-        "mz.h": "c"
+        "mz.h": "c",
+        "ratio": "c",
+        "tuple": "c",
+        "utility": "c"
     }
 }

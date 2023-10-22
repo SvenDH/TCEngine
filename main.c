@@ -86,6 +86,11 @@ static void* main_fiber(void* args) {
 		add_semaphore(&renderer, &rendercompletesemaphores[i]);
 	}
 	sampler_t sampler;
+
+	shader_t shader;
+	rootsignature_t rootsignature;
+	pipeline_t pipeline;
+	
 	samplerdesc_t samplerdesc = { 
 		FILTER_LINEAR,
 		FILTER_LINEAR,
@@ -96,15 +101,12 @@ static void* main_fiber(void* args) {
 	};
 	add_sampler(&renderer, &samplerdesc, &sampler);
 
-	shader_t shader;
-	rootsignature_t rootsignature;
-
 	shaderloaddesc_t desc = { 0 };
 	desc.stages[0] = (shaderstageloaddesc_t){ "base.vert", NULL, 0 };
 	desc.stages[1] = (shaderstageloaddesc_t){ "base.frag", NULL, 0 };
 	load_shader(&renderer, &desc, &shader);
 
-	const char* staticsamplernames[] = { "uSampler" };
+	const char* staticsamplernames[] = { "sampler" };
 	rootsignaturedesc_t rootdesc = { &(shader_t*){&shader}, 1 };
 	rootdesc.staticsamplercount = 1;
 	rootdesc.staticsamplernames = staticsamplernames;
@@ -132,8 +134,6 @@ static void* main_fiber(void* args) {
 		.cullmode = CULL_MODE_NONE,
 		.scissor = true
 	};
-
-	pipeline_t pipeline;
 	graphicspipelinedesc_t gfxdesc = {
 		.shader = &shader,
 		.rootsignature = &rootsignature,
